@@ -137,6 +137,71 @@ func (lv *ListView) applyFilter() {
 	lv.selectedItem = 0
 }
 
+// formatLabels extracts Code-Review and Verified scores and returns colored text
+func formatLabels(change map[string]interface{}) string {
+	labelsRaw, ok := change["labels"]
+	if !ok {
+		return ""
+	}
+	labels, ok := labelsRaw.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	var parts []string
+
+	// Code-Review
+	if cr, ok := labels["Code-Review"].(map[string]interface{}); ok {
+		score := 0
+		if _, ok := cr["rejected"]; ok {
+			score = -2
+		} else if _, ok := cr["disliked"]; ok {
+			score = -1
+		} else if _, ok := cr["approved"]; ok {
+			score = 2
+		} else if _, ok := cr["recommended"]; ok {
+			score = 1
+		}
+		if score != 0 {
+			parts = append(parts, colorLabel("C", score))
+		}
+	}
+
+	// Verified
+	if v, ok := labels["Verified"].(map[string]interface{}); ok {
+		score := 0
+		if _, ok := v["rejected"]; ok {
+			score = -1
+		} else if _, ok := v["approved"]; ok {
+			score = 1
+		}
+		if score != 0 {
+			parts = append(parts, colorLabel("T", score))
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ")
+}
+
+func colorLabel(prefix string, score int) string {
+	var color string
+	switch score {
+	case 2:
+		color = "28" // dark green
+	case 1:
+		color = "114" // light green
+	case -1:
+		color = "210" // light red
+	case -2:
+		color = "160" // dark red
+	}
+	text := fmt.Sprintf("%s%d", prefix, score)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(text)
+}
+
 // pageChanges returns the changes for a given page
 func (lv *ListView) pageChanges(page int) []map[string]interface{} {
 	start := page * lv.pageSize
@@ -284,18 +349,7 @@ func (lv *ListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return lv, nil
 
-		// n/N: next/prev in filtered list (same as j/k, for muscle memory)
-		case msg.Type == tea.KeyRunes && msg.String() == "n":
-			if lv.selectedItem < len(lv.changes)-1 {
-				lv.selectedItem++
-			}
-			return lv, nil
-
-		case msg.Type == tea.KeyRunes && msg.String() == "N":
-			if lv.selectedItem > 0 {
-				lv.selectedItem--
-			}
-			return lv, nil
+		// n/N removed: use j/k to navigate filtered results
 
 		case key.Matches(msg, lv.keys.FocusUp):
 			// Switch category up
@@ -455,14 +509,24 @@ func (lv *ListView) renderMainList() string {
 		change := lv.changes[i]
 		changeNum := fmt.Sprintf("%v", change["_number"])
 		subject := fmt.Sprintf("%v", change["subject"])
-		if len(subject) > 60 {
-			subject = subject[:57] + "..."
+		if len(subject) > 50 {
+			subject = subject[:47] + "..."
 		}
 		line := fmt.Sprintf("%s: %s", changeNum, subject)
+		labels := formatLabels(change)
+
 		if i == lv.selectedItem {
-			items = append(items, selectedItemStyle.Render("▸ "+line))
+			styled := selectedItemStyle.Render("▸ " + line)
+			if labels != "" {
+				styled += " " + labels
+			}
+			items = append(items, styled)
 		} else {
-			items = append(items, "  "+line)
+			plain := "  " + line
+			if labels != "" {
+				plain += " " + labels
+			}
+			items = append(items, plain)
 		}
 	}
 
@@ -485,7 +549,7 @@ func (lv *ListView) View() string {
 	// Help
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
-		Render("alt+k/j: switch category | k/j: navigate | alt+h/l: prev/next page | /: search | n/N: next/prev hit | enter: select | q: quit")
+		Render("alt+k/j: switch category | k/j: navigate | alt+h/l: prev/next page | /: search | enter: select | q: quit")
 
 	// Combine sidebar and main list
 	sidebar := lv.renderSidebar()
