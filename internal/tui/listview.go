@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,6 +40,10 @@ type ListView struct {
 	currentPage  int
 	pageSize     int
 	totalPages   int
+
+	// Search state
+	searching   bool   // true when / search bar is active
+	searchQuery string // current query; non-empty means filter is active
 
 	// Layout
 	width  int
@@ -94,6 +99,42 @@ func (lv *ListView) loadChanges() tea.Cmd {
 		}
 		return changesLoadedMsg{changes}
 	}
+}
+
+// fuzzyMatch returns true if all runes in pattern appear in str in order (fzf-style)
+func fuzzyMatch(pattern, str string) bool {
+	pattern = strings.ToLower(pattern)
+	str = strings.ToLower(str)
+	pi := 0
+	patRunes := []rune(pattern)
+	for _, r := range str {
+		if pi < len(patRunes) && r == patRunes[pi] {
+			pi++
+		}
+	}
+	return pi == len(patRunes)
+}
+
+// applyFilter filters allChanges by searchQuery and updates lv.changes
+func (lv *ListView) applyFilter() {
+	if lv.searchQuery == "" {
+		lv.changes = lv.pageChanges(lv.currentPage)
+		return
+	}
+	query := strings.ToLower(lv.searchQuery)
+	var filtered []map[string]interface{}
+	for _, change := range lv.allChanges {
+		subject := strings.ToLower(fmt.Sprintf("%v", change["subject"]))
+		num := fmt.Sprintf("%v", change["_number"])
+		if strings.Contains(subject, query) || strings.Contains(num, query) {
+			filtered = append(filtered, change)
+		}
+	}
+	if filtered == nil {
+		filtered = []map[string]interface{}{}
+	}
+	lv.changes = filtered
+	lv.selectedItem = 0
 }
 
 // pageChanges returns the changes for a given page
@@ -161,6 +202,9 @@ func (lv *ListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				lv.currentPage = lv.totalPages - 1
 			}
 			lv.changes = lv.pageChanges(lv.currentPage)
+			if lv.searchQuery != "" {
+				lv.applyFilter()
+			}
 			if lv.selectedItem >= len(lv.changes) {
 				lv.selectedItem = 0
 			}
@@ -182,7 +226,12 @@ func (lv *ListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if lv.totalPages == 0 {
 			lv.totalPages = 1
 		}
-		lv.changes = lv.pageChanges(0)
+		// If search filter is active, apply it to new data
+		if lv.searchQuery != "" {
+			lv.applyFilter()
+		} else {
+			lv.changes = lv.pageChanges(0)
+		}
 		return lv, nil
 
 	case errMsg:
@@ -190,9 +239,63 @@ func (lv *ListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return lv, nil
 
 	case tea.KeyMsg:
+		// Search mode: intercept all keys
+		if lv.searching {
+			switch msg.Type {
+			case tea.KeyEscape:
+				lv.searching = false
+				lv.searchQuery = ""
+				lv.changes = lv.pageChanges(lv.currentPage)
+				lv.selectedItem = 0
+			case tea.KeyEnter:
+				lv.searching = false // keep filtered list, ESC to restore
+			case tea.KeyBackspace:
+				runes := []rune(lv.searchQuery)
+				if len(runes) > 0 {
+					lv.searchQuery = string(runes[:len(runes)-1])
+					lv.applyFilter()
+				}
+			default:
+				if msg.Type == tea.KeyRunes {
+					lv.searchQuery += msg.String()
+					lv.applyFilter()
+				}
+			}
+			return lv, nil
+		}
+
 		switch {
 		case key.Matches(msg, lv.keys.Quit):
 			return lv, tea.Quit
+
+		// Enter search mode
+		case msg.Type == tea.KeyRunes && msg.String() == "/":
+			lv.searching = true
+			lv.searchQuery = ""
+			lv.applyFilter()
+			return lv, nil
+
+		// Clear filter with ESC when not in search mode
+		case msg.Type == tea.KeyEsc:
+			if lv.searchQuery != "" {
+				lv.searchQuery = ""
+				lv.changes = lv.pageChanges(lv.currentPage)
+				lv.selectedItem = 0
+			}
+			return lv, nil
+
+		// n/N: next/prev in filtered list (same as j/k, for muscle memory)
+		case msg.Type == tea.KeyRunes && msg.String() == "n":
+			if lv.selectedItem < len(lv.changes)-1 {
+				lv.selectedItem++
+			}
+			return lv, nil
+
+		case msg.Type == tea.KeyRunes && msg.String() == "N":
+			if lv.selectedItem > 0 {
+				lv.selectedItem--
+			}
+			return lv, nil
 
 		case key.Matches(msg, lv.keys.FocusUp):
 			// Switch category up
@@ -308,18 +411,48 @@ func (lv *ListView) renderMainList() string {
 		return mainListStyle.Width(mainWidth).Height(mainHeight).Render("Loading...")
 	}
 
-	if len(lv.changes) == 0 {
+	if len(lv.changes) == 0 && !lv.searching {
 		return mainListStyle.Width(mainWidth).Height(mainHeight).Render("No changes found")
 	}
 
-	// Page indicator
-	pageIndicator := fmt.Sprintf("%d/%d", lv.currentPage+1, lv.totalPages)
-
 	var items []string
-	items = append(items, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(pageIndicator))
+
+	// Status bar: search input or page indicator
+	if lv.searching {
+		searchText := fmt.Sprintf("/%s_", lv.searchQuery)
+		if lv.searchQuery != "" {
+			searchText += fmt.Sprintf(" [%d results]", len(lv.changes))
+		} else if len(lv.changes) == 0 && lv.searchQuery != "" {
+			searchText += " [no match]"
+		}
+		items = append(items, lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Render(searchText))
+	} else {
+		indicator := fmt.Sprintf("%d/%d", lv.currentPage+1, lv.totalPages)
+		if lv.searchQuery != "" {
+			indicator = fmt.Sprintf("/%s  %d results  (esc to clear)", lv.searchQuery, len(lv.changes))
+		}
+		items = append(items, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(indicator))
+	}
 	items = append(items, "")
 
-	for i, change := range lv.changes {
+	// Only render visible items to prevent layout overflow
+	// Inner content height = mainHeight - 2 (vertical padding)
+	// Reserve 2 lines for search bar + empty line
+	maxVisible := mainHeight - 4
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+	scrollOffset := 0
+	if lv.selectedItem >= maxVisible {
+		scrollOffset = lv.selectedItem - maxVisible + 1
+	}
+	end := scrollOffset + maxVisible
+	if end > len(lv.changes) {
+		end = len(lv.changes)
+	}
+
+	for i := scrollOffset; i < end; i++ {
+		change := lv.changes[i]
 		changeNum := fmt.Sprintf("%v", change["_number"])
 		subject := fmt.Sprintf("%v", change["subject"])
 		if len(subject) > 60 {
@@ -352,7 +485,7 @@ func (lv *ListView) View() string {
 	// Help
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
-		Render("alt+k/j: switch category | k/j: navigate | alt+h/l: prev/next page | enter: select | q: quit")
+		Render("alt+k/j: switch category | k/j: navigate | alt+h/l: prev/next page | /: search | n/N: next/prev hit | enter: select | q: quit")
 
 	// Combine sidebar and main list
 	sidebar := lv.renderSidebar()
