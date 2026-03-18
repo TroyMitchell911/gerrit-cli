@@ -364,7 +364,7 @@ func (dv *DetailView) renderSummaryPane() string {
 	// Status
 	lines = append(lines, fmt.Sprintf("Status: %v", dv.change["status"]))
 
-	// Labels (Code-Review, Verified, etc.)
+	// Labels (Code-Review, Verified, etc.) - show individual votes
 	if labels, ok := dv.change["labels"].(map[string]interface{}); ok {
 		lines = append(lines, "")
 		lines = append(lines, "Labels:")
@@ -376,12 +376,60 @@ func (dv *DetailView) renderSummaryPane() string {
 		for _, label := range labelNames {
 			data := labels[label]
 			if labelData, ok := data.(map[string]interface{}); ok {
-				if approved, ok := labelData["approved"].(map[string]interface{}); ok {
-					name := approved["name"]
-					lines = append(lines, fmt.Sprintf("  %s: ✓ %v", label, name))
-				} else if rejected, ok := labelData["rejected"].(map[string]interface{}); ok {
-					name := rejected["name"]
-					lines = append(lines, fmt.Sprintf("  %s: ✗ %v", label, name))
+				prefix := "C"
+				if label == "Verified" {
+					prefix = "T"
+				}
+				_ = prefix // prefix no longer used for main display; kept for fallback
+				// Show individual votes from "all" array
+				if allVotes, ok := labelData["all"].([]interface{}); ok {
+					for _, vote := range allVotes {
+						if v, ok := vote.(map[string]interface{}); ok {
+							value := 0
+							if val, ok := v["value"].(float64); ok {
+								value = int(val)
+							}
+							if value == 0 {
+								continue
+							}
+							name := "Unknown"
+							if n, ok := v["name"].(string); ok {
+								name = n
+							}
+							scoreText := fmt.Sprintf("%s %+d", label, value)
+							var color string
+							switch value {
+							case 2:
+								color = "28"  // dark green
+							case 1:
+								color = "114" // light green
+							case -1:
+								color = "210" // light red
+							case -2:
+								color = "160" // dark red
+							}
+							colored := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(scoreText)
+							lines = append(lines, fmt.Sprintf("  %s %s", colored, name))
+						}
+					}
+				} else {
+					// Fallback: use summary fields if "all" not available
+					if approved, ok := labelData["approved"].(map[string]interface{}); ok {
+						name := fmt.Sprintf("%v", approved["name"])
+						colored := lipgloss.NewStyle().Foreground(lipgloss.Color("28")).Render(prefix + "2")
+						if label == "Verified" {
+							colored = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Render(prefix + "1")
+						}
+						lines = append(lines, fmt.Sprintf("  %s %s", colored, name))
+					}
+					if rejected, ok := labelData["rejected"].(map[string]interface{}); ok {
+						name := fmt.Sprintf("%v", rejected["name"])
+						colored := lipgloss.NewStyle().Foreground(lipgloss.Color("160")).Render(prefix + "-2")
+						if label == "Verified" {
+							colored = lipgloss.NewStyle().Foreground(lipgloss.Color("210")).Render(prefix + "-1")
+						}
+						lines = append(lines, fmt.Sprintf("  %s %s", colored, name))
+					}
 				}
 			}
 		}
@@ -536,8 +584,9 @@ func (dv *DetailView) renderReviewPane() string {
 	}
 
 	var lines []string
-	// lineToComment maps wrapped line index → commentList index (for scroll tracking)
-	lineToComment := make(map[int]int)
+	// Track raw line range [start, end) for each comment
+	type commentRange struct{ start, end int }
+	var commentRanges []commentRange
 
 	lines = append(lines, lipgloss.NewStyle().Bold(true).Render("Comments:"))
 	lines = append(lines, "")
@@ -546,8 +595,7 @@ func (dv *DetailView) renderReviewPane() string {
 		lines = append(lines, "No comments yet")
 	} else {
 		for i, c := range dv.commentList {
-			// Record which line this comment starts at
-			lineToComment[len(lines)] = i
+			rawStart := len(lines)
 
 			prefix := "  "
 			if dv.activePane == PaneReview && i == dv.selectedComment {
@@ -560,38 +608,40 @@ func (dv *DetailView) renderReviewPane() string {
 				lines = append(lines, fmt.Sprintf("    %s", msgLine))
 			}
 			lines = append(lines, "")
+
+			commentRanges = append(commentRanges, commentRange{rawStart, len(lines)})
 		}
 	}
 
 	paneHeight := dv.height/2 - 6
+	wrapWidth := dv.width/2 - 10
 
 	// Wrap lines to prevent overflow (supports CJK)
-	wrappedLines := wrapLines(lines, dv.width/2-10)
+	wrappedLines := wrapLines(lines, wrapWidth)
 	dv.reviewLineCount = len(wrappedLines)
 
-	// Auto-scroll to keep selected comment visible
-	// Find the wrapped line index of the selected comment
-	selectedLineIdx := 0
-	for rawIdx, commentIdx := range lineToComment {
-		if commentIdx == dv.selectedComment {
-			// Count wrapped lines before rawIdx
-			wl := 0
-			for li, l := range lines {
-				if li >= rawIdx {
-					break
-				}
-				wl += len(wrapLine(l, dv.width/2-10))
-			}
-			selectedLineIdx = wl
-			break
+	// Auto-scroll to keep selected comment fully visible
+	wrappedStart := 0
+	wrappedEnd := 0
+	if dv.selectedComment >= 0 && dv.selectedComment < len(commentRanges) {
+		cr := commentRanges[dv.selectedComment]
+		for li := 0; li < cr.start; li++ {
+			wrappedStart += len(wrapLine(lines[li], wrapWidth))
+		}
+		wrappedEnd = wrappedStart
+		for li := cr.start; li < cr.end; li++ {
+			wrappedEnd += len(wrapLine(lines[li], wrapWidth))
 		}
 	}
 
 	scroll := dv.reviewScroll
-	if selectedLineIdx < scroll {
-		scroll = selectedLineIdx
-	} else if selectedLineIdx >= scroll+paneHeight {
-		scroll = selectedLineIdx - paneHeight + 1
+	if wrappedEnd-wrappedStart > paneHeight {
+		// Comment taller than pane: pin header at top
+		scroll = wrappedStart
+	} else if wrappedStart < scroll {
+		scroll = wrappedStart
+	} else if wrappedEnd > scroll+paneHeight {
+		scroll = wrappedEnd - paneHeight
 	}
 
 	maxScroll := 0
@@ -676,13 +726,28 @@ func (dv *DetailView) View() string {
 	)
 }
 
+// currentPatchset returns the current patchset number from change data
+func (dv *DetailView) currentPatchset() int {
+	if currentRev, ok := dv.change["_current_revision"].(string); ok {
+		if revisions, ok := dv.change["revisions"].(map[string]interface{}); ok {
+			if revData, ok := revisions[currentRev].(map[string]interface{}); ok {
+				if num, ok := revData["_number"].(float64); ok {
+					return int(num)
+				}
+			}
+		}
+	}
+	return 1 // fallback
+}
+
 // fetchChange fetches the change using git
 func (dv *DetailView) fetchChange() tea.Cmd {
 	return func() tea.Msg {
-		// Build refs path
-		refsPath := fmt.Sprintf("refs/changes/%s/%s/1",
+		// Build refs path using current patchset
+		refsPath := fmt.Sprintf("refs/changes/%s/%s/%d",
 			dv.changeID[len(dv.changeID)-2:],
-			dv.changeID)
+			dv.changeID,
+			dv.currentPatchset())
 
 		// Build remote URL
 		remoteURL := fmt.Sprintf("ssh://%s@%s:%d/%s",
@@ -704,10 +769,11 @@ func (dv *DetailView) fetchChange() tea.Cmd {
 // cherryPickChange cherry-picks the change
 func (dv *DetailView) cherryPickChange() tea.Cmd {
 	return func() tea.Msg {
-		// First fetch
-		refsPath := fmt.Sprintf("refs/changes/%s/%s/1",
+		// First fetch using current patchset
+		refsPath := fmt.Sprintf("refs/changes/%s/%s/%d",
 			dv.changeID[len(dv.changeID)-2:],
-			dv.changeID)
+			dv.changeID,
+			dv.currentPatchset())
 
 		remoteURL := fmt.Sprintf("ssh://%s@%s:%d/%s",
 			dv.cfg.User,

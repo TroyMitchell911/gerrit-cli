@@ -173,7 +173,7 @@ func (c *RESTClient) TestConnection() error {
 
 // GetChange retrieves a change by ID
 func (c *RESTClient) GetChange(changeID string) (map[string]interface{}, error) {
-	resp, err := c.Get(fmt.Sprintf("changes/%s?o=LABELS&o=CURRENT_REVISION&o=CURRENT_COMMIT&o=DETAILED_ACCOUNTS", changeID))
+	resp, err := c.Get(fmt.Sprintf("changes/%s?o=DETAILED_LABELS&o=CURRENT_REVISION&o=CURRENT_COMMIT&o=DETAILED_ACCOUNTS", changeID))
 	if err != nil {
 		return nil, err
 	}
