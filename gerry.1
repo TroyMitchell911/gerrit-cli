@@ -1,4 +1,328 @@
-.TH GERRY 1 "July 2025" "gerry 1.0" "User Commands"
+.TH GERRY 1 "March 2026" "gerry 1.0" "User Commands"
+.SH NAME
+gerry \- Gerrit Code Review command-line interface
+.SH SYNOPSIS
+.B gerry
+[\fIOPTION\fR]...
+\fICOMMAND\fR
+[\fIARG\fR]...
+.SH DESCRIPTION
+.B gerry
+is a command-line interface for interacting with Gerrit Code Review, designed for developers who prefer terminal workflows over web interfaces.
+
+The tool provides easy access to common Gerrit operations including listing changes, viewing comments, fetching changes locally, cherry-picking changes into your working branch, and a full-featured interactive TUI.
+.SH GLOBAL OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Show help information
+.TP
+.BR \-v ", " \-\-verbose
+Enable verbose output
+.TP
+.BR \-\-config " \fIFILE\fR"
+Use alternate configuration file
+.SH COMMANDS
+.SS gerry tui
+Launch the interactive terminal UI for Gerrit code review.
+.P
+The TUI provides three views:
+.TP
+.B List View
+Sidebar with My List / Team / All Open and user-configured projects.
+Dynamic pagination based on window height with page indicator (e.g. 1/4).
+.RS
+.TP
+.B alt+k/j
+Switch category in sidebar
+.TP
+.B k/j
+Navigate changes
+.TP
+.B alt+h/l
+Previous/next page
+.TP
+.B enter
+Open change detail
+.TP
+.B q
+Quit
+.RE
+.TP
+.B Detail View
+Three-pane layout: Summary (top-left), Comments (top-right), Files Changed (bottom).
+.RS
+.TP
+.B alt+j/k
+Switch between top panes and Files Changed pane
+.TP
+.B alt+h/l
+Switch between Summary and Comments panes
+.TP
+.B k/j
+Scroll active pane / navigate file or comment list
+.TP
+.B enter
+Open selected file diff in nvim/vim (Files pane) or reply to comment (Comments pane)
+.TP
+.B f
+Fetch change
+.TP
+.B C
+Cherry-pick change
+.TP
+.B alt+c / alt+C
+Submit Code-Review +1 / +2
+.TP
+.B alt+t
+Submit Verified +1
+.TP
+.B q
+Return to list view
+.RE
+.TP
+.B Inline Comment Workflow (in nvim/vim)
+.RS
+.TP
+.B gc
+Add inline comment at current diff line
+.TP
+.B ge
+Edit comment near current line
+.TP
+.B gd
+Delete comment near current line (with confirmation)
+.TP
+.B :q
+Exit editor — comments are auto-submitted to Gerrit as published inline comments
+.RE
+.P
+All key bindings are configurable via
+.IR ~/.gerry/tui_keys.json .
+Project sidebar visibility is controlled via
+.IR ~/.gerry/tui_projects.json
+(move projects from
+.B hidden
+to
+.B visible
+to show them in the sidebar).
+.SS gerry init
+Interactive setup wizard that configures your Gerrit connection.
+.P
+Prompts for server details, tests SSH connectivity and REST API authentication, then saves the configuration to ~/.gerry/config.json.
+.SS gerry list [OPTIONS]
+List your open changes.
+.TP
+.BR \-\-detailed
+Show detailed information including patch set numbers
+.TP
+.BR \-\-reviewer
+Show changes that need your review instead of your own changes
+.TP
+.BR \-\-limit " \fINUMBER\fR"
+Limit the number of results (default: 25)
+.TP
+.BR \-\-status " \fISTATUS\fR"
+Filter by change status (open, merged, abandoned)
+.SS gerry comments \fICHANGE-ID\fR [OPTIONS]
+View comments on a specific change.
+.TP
+.BR \-\-all
+Show all comments including resolved ones (default: unresolved only)
+.P
+Comments are grouped by file and formatted for easy reading in the terminal.
+.SS gerry details \fICHANGE-ID\fR [OPTIONS]
+Show comprehensive information about a change including files, reviewers, and scores.
+.TP
+.BR \-\-files
+Show detailed file listing with insertions/deletions
+.P
+Displays change metadata, review scores, reviewers, CC list, and patch set information.
+.SS gerry fetch \fICHANGE-ID\fR [\fIPATCHSET\fR] [OPTIONS]
+Fetch a change and checkout to FETCH_HEAD.
+.TP
+.BR \-c ", " \-\-checkout
+Checkout to FETCH_HEAD after fetching (default: true)
+.TP
+.BR \-\-no-checkout
+Skip checkout, only fetch the change
+.TP
+.BR \-\-no-verify
+Skip git hooks during checkout
+.P
+If patchset is not specified, fetches the current patch set. Requires being in a git repository.
+.SS gerry cherry \fICHANGE-ID\fR [\fIPATCHSET\fR] [OPTIONS]
+.SS gerry cherry-pick \fICHANGE-ID\fR [\fIPATCHSET\fR] [OPTIONS]
+Fetch and cherry-pick a change.
+.TP
+.BR \-n ", " \-\-no-commit
+Don't commit the cherry-pick, leaving changes staged
+.TP
+.BR \-\-no-verify
+Skip git hooks during cherry-pick
+.P
+If patchset is not specified, uses the current patch set. Requires a clean working directory and being in a git repository. On conflicts, provides helpful guidance for resolution.
+.SS gerry update [OPTIONS]
+Update gerry to the latest version.
+.TP
+.BR \-\-skip-pull
+Skip git pull and just rebuild from current source
+.P
+Must be run from the source directory. Pulls latest changes from git and rebuilds the binary.
+.SS gerry version
+Show version information.
+.SH CONFIGURATION
+Configuration is stored in
+.I ~/.gerry/config.json
+and can be initialized with
+.BR "gerry init" .
+
+Environment variables take precedence over configuration file values:
+.TP
+.B GERRIT_SERVER
+Gerrit server hostname
+.TP
+.B GERRIT_PORT
+SSH port (default: 29418)
+.TP
+.B GERRIT_USER
+Your Gerrit username
+.TP
+.B GERRIT_HTTP_PASSWORD
+Your HTTP password from Gerrit Settings → HTTP Password
+.TP
+.B GERRIT_PROJECT
+Default project name
+.SS Configuration File Format
+.EX
+{
+  "server": "gerrit.example.com",
+  "port": 29418,
+  "http_port": 443,
+  "user": "your-username",
+  "http_password": "your-http-password",
+  "ssh_key": "/path/to/ssh/key",
+  "project": "default-project"
+}
+.EE
+.SS TUI Key Bindings (~/.gerry/tui_keys.json)
+.EX
+{
+  "global":     { "quit": ["q", "ctrl+c"] },
+  "navigation": { "up": ["k"], "down": ["j"], "select": ["enter"], "back": ["q"] },
+  "focus":      { "focus_up": ["alt+k"], "focus_down": ["alt+j"],
+                  "focus_left": ["alt+h"], "focus_right": ["alt+l"] },
+  "actions":    { "inline_comment": ["gc"], "fetch": ["f"],
+                  "cherry_pick": ["shift+c"], "review_plus1": ["alt+c"],
+                  "review_plus2": ["alt+C"], "test_plus1": ["alt+t"] }
+}
+.EE
+.SS TUI Project Visibility (~/.gerry/tui_projects.json)
+.EX
+{
+  "visible": ["my-project", "another-project"],
+  "hidden":  ["all", "other", "projects", "..."]
+}
+.EE
+Move projects from
+.B hidden
+to
+.B visible
+to show them in the TUI sidebar.
+.SS Port Configuration
+.TP
+.B port
+SSH port (usually 29418)
+.TP
+.B http_port
+HTTP/HTTPS port for REST API. Common values: 443 (HTTPS), 8080 (HTTP), 8443 (HTTPS). If not specified, auto-detection attempts to determine the correct port.
+.SH EXAMPLES
+.SS Interactive TUI
+Launch the TUI:
+.EX
+gerry tui
+.EE
+
+Navigate to a change and open its diff:
+.EX
+# In TUI: alt+j to go to All Open, j/k to select, enter to open detail
+# In detail: alt+j to go to Files, enter on a file to open diff in nvim
+.EE
+
+Add an inline comment in nvim:
+.EX
+# Navigate to a line in the diff, press gc, type comment, press Enter
+# Press :q to exit — comment is auto-published to Gerrit
+.EE
+.SS Daily Workflow
+List changes requiring your review:
+.EX
+gerry list --reviewer
+.EE
+
+Check details on a change:
+.EX
+gerry details 384465
+.EE
+
+Read comments on a change:
+.EX
+gerry comments 384465
+.EE
+
+Fetch and test a change locally:
+.EX
+gerry fetch 384465
+.EE
+
+Cherry-pick a change to your branch:
+.EX
+git checkout my-feature-branch
+gerry cherry 384465
+.EE
+.SS Advanced Usage
+Cherry-pick without committing for review:
+.EX
+gerry cherry 384465 --no-commit
+.EE
+
+Cherry-pick a specific patchset:
+.EX
+gerry cherry 384465 3
+.EE
+
+List only your own open changes:
+.EX
+gerry list --detailed
+.EE
+
+View all comments including resolved ones:
+.EX
+gerry comments 384465 --all
+.EE
+.SH FILES
+.TP
+.I ~/.gerry/config.json
+User configuration file
+.TP
+.I ~/.gerry/tui_keys.json
+TUI key binding configuration
+.TP
+.I ~/.gerry/tui_projects.json
+TUI project visibility configuration
+.SH EXIT STATUS
+.B gerry
+exits with status 0 on success, and >0 if an error occurs.
+.SH AUTHOR
+Written by Drake Harper.
+.SH BUGS
+Report bugs at: https://github.com/drakeaharper/gerrit-cli/issues
+.SH SEE ALSO
+.BR git (1),
+.BR ssh (1),
+.BR nvim (1),
+.BR vim (1)
+.P
+Gerrit Code Review documentation: https://gerrit-review.googlesource.com/Documentation/
 .SH NAME
 gerry \- Gerrit Code Review command-line interface
 .SH SYNOPSIS

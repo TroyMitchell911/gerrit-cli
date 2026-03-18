@@ -5,6 +5,7 @@ A command-line interface for interacting with Gerrit Code Review, designed for d
 ## Features
 
 - **Easy Setup**: Interactive configuration wizard with `gerry init`
+- **Interactive TUI**: Full-featured terminal UI with `gerry tui`
 - **List Changes**: View your open changes with `gerry list`
 - **Team Review**: See changes where you're a reviewer or CC'd with `gerry team`
 - **Share Changes**: Add reviewers and CCs to changes with `gerry share`
@@ -300,6 +301,34 @@ Configuration is stored in `~/.gerry/config.json`. You can also use environment 
 Environment variables take precedence over configuration file values.
 
 ## Commands
+
+### `gerry tui`
+Launch the interactive terminal UI for Gerrit code review.
+
+A full-featured TUI with three views:
+
+**List View**
+- Sidebar: My List / Team / All Open + user-configured projects
+- Dynamic pagination based on window height; page indicator shown as `1/4`
+- `alt+k/j`: switch category | `k/j`: navigate | `alt+h/l`: prev/next page | `enter`: open change | `q`: quit
+
+**Detail View** (three-pane layout)
+- Summary (top-left): change metadata, owner, status, labels
+- Comments (top-right): inline comments with `j/k` selection, `enter` to reply
+- Files Changed (bottom): file list with `j/k` selection, `enter` to open diff in nvim/vim
+- `alt+j/k`: switch between top and bottom panes
+- `alt+h/l`: switch between Summary and Comments
+- `f`: fetch | `C`: cherry-pick | `alt+c/C`: Code-Review +1/+2 | `alt+t`: Verified +1 | `q`: back
+
+**Inline Comment Workflow** (in nvim/vim)
+- `gc`: add comment at current line
+- `ge`: edit comment near current line
+- `gd`: delete comment near current line
+- `:q`: exit — comments are auto-submitted to Gerrit as published inline comments
+
+**Configuration files**
+- `~/.gerry/tui_keys.json`: customize all key bindings
+- `~/.gerry/tui_projects.json`: control which projects appear in sidebar (`visible`/`hidden` lists)
 
 ### `gerry init`
 Interactive setup wizard that configures your Gerrit connection.

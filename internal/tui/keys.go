@@ -1,0 +1,220 @@
+package tui
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/charmbracelet/bubbles/key"
+)
+
+// KeyConfig represents the JSON structure for key bindings
+type KeyConfig struct {
+	Global     map[string][]string `json:"global"`
+	Navigation map[string][]string `json:"navigation"`
+	Focus      map[string][]string `json:"focus"`
+	Actions    map[string][]string `json:"actions"`
+}
+
+// KeyMap contains all key bindings for the TUI
+type KeyMap struct {
+	// Global
+	Quit key.Binding
+	Help key.Binding
+
+	// Navigation
+	Up     key.Binding
+	Down   key.Binding
+	Select key.Binding
+	Back   key.Binding
+
+	// Focus
+	FocusLeft  key.Binding
+	FocusRight key.Binding
+	FocusUp    key.Binding
+	FocusDown  key.Binding
+
+	// Actions
+	InlineComment key.Binding
+	Fetch         key.Binding
+	CherryPick    key.Binding
+	ReviewPlus1   key.Binding
+	ReviewPlus2   key.Binding
+	TestPlus1     key.Binding
+}
+
+const (
+	tuiKeysFileName = "tui_keys.json"
+)
+
+// DefaultKeyConfig returns the default key configuration
+func DefaultKeyConfig() KeyConfig {
+	return KeyConfig{
+		Global: map[string][]string{
+			"quit": {"q", "ctrl+c"},
+			"help": {"?"},
+		},
+		Navigation: map[string][]string{
+			"up":     {"k", "up"},
+			"down":   {"j", "down"},
+			"select": {"enter"},
+			"back":   {"q"},
+		},
+		Focus: map[string][]string{
+			"focus_left":  {"alt+h"},
+			"focus_right": {"alt+l"},
+			"focus_up":    {"alt+k"},
+			"focus_down":  {"alt+j"},
+		},
+		Actions: map[string][]string{
+			"inline_comment": {"gc"},
+			"fetch":          {"f"},
+			"cherry_pick":    {"shift+c"},
+			"review_plus1":   {"alt+c"},
+			"review_plus2":   {"alt+C"},
+			"test_plus1":     {"alt+t"},
+		},
+	}
+}
+
+// GetKeysPath returns the path to the TUI keys configuration file
+func GetKeysPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(home, ".gerry", tuiKeysFileName), nil
+}
+
+// LoadKeyConfig loads the key configuration from file or creates default
+func LoadKeyConfig() (*KeyConfig, error) {
+	keysPath, err := GetKeysPath()
+	if err != nil {
+		return nil, err
+	}
+
+	// If file doesn't exist, create default
+	if _, err := os.Stat(keysPath); os.IsNotExist(err) {
+		defaultConfig := DefaultKeyConfig()
+		if err := SaveKeyConfig(&defaultConfig); err != nil {
+			return nil, fmt.Errorf("failed to create default key config: %w", err)
+		}
+		return &defaultConfig, nil
+	}
+
+	// Read existing file
+	data, err := os.ReadFile(keysPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key config: %w", err)
+	}
+
+	var config KeyConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse key config: %w", err)
+	}
+
+	return &config, nil
+}
+
+// SaveKeyConfig saves the key configuration to file
+func SaveKeyConfig(config *KeyConfig) error {
+	keysPath, err := GetKeysPath()
+	if err != nil {
+		return err
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(keysPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal key config: %w", err)
+	}
+
+	if err := os.WriteFile(keysPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write key config: %w", err)
+	}
+
+	return nil
+}
+
+// NewKeyMap creates a KeyMap from KeyConfig
+func NewKeyMap(config *KeyConfig) KeyMap {
+	return KeyMap{
+		// Global
+		Quit: key.NewBinding(
+			key.WithKeys(config.Global["quit"]...),
+			key.WithHelp("q", "quit"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys(config.Global["help"]...),
+			key.WithHelp("?", "help"),
+		),
+
+		// Navigation
+		Up: key.NewBinding(
+			key.WithKeys(config.Navigation["up"]...),
+			key.WithHelp("k/↑", "up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys(config.Navigation["down"]...),
+			key.WithHelp("j/↓", "down"),
+		),
+		Select: key.NewBinding(
+			key.WithKeys(config.Navigation["select"]...),
+			key.WithHelp("enter", "select"),
+		),
+		Back: key.NewBinding(
+			key.WithKeys(config.Navigation["back"]...),
+			key.WithHelp("esc", "back"),
+		),
+
+		// Focus
+		FocusLeft: key.NewBinding(
+			key.WithKeys(config.Focus["focus_left"]...),
+			key.WithHelp("alt+h", "focus left"),
+		),
+		FocusRight: key.NewBinding(
+			key.WithKeys(config.Focus["focus_right"]...),
+			key.WithHelp("alt+l", "focus right"),
+		),
+		FocusUp: key.NewBinding(
+			key.WithKeys(config.Focus["focus_up"]...),
+			key.WithHelp("alt+k", "focus up"),
+		),
+		FocusDown: key.NewBinding(
+			key.WithKeys(config.Focus["focus_down"]...),
+			key.WithHelp("alt+j", "focus down"),
+		),
+
+		// Actions
+		InlineComment: key.NewBinding(
+			key.WithKeys(config.Actions["inline_comment"]...),
+			key.WithHelp("gc", "comment"),
+		),
+		Fetch: key.NewBinding(
+			key.WithKeys(config.Actions["fetch"]...),
+			key.WithHelp("f", "fetch"),
+		),
+		CherryPick: key.NewBinding(
+			key.WithKeys(config.Actions["cherry_pick"]...),
+			key.WithHelp("C", "cherry-pick"),
+		),
+		ReviewPlus1: key.NewBinding(
+			key.WithKeys(config.Actions["review_plus1"]...),
+			key.WithHelp("alt+c", "CR+1"),
+		),
+		ReviewPlus2: key.NewBinding(
+			key.WithKeys(config.Actions["review_plus2"]...),
+			key.WithHelp("alt+C", "CR+2"),
+		),
+		TestPlus1: key.NewBinding(
+			key.WithKeys(config.Actions["test_plus1"]...),
+			key.WithHelp("alt+t", "TB+1"),
+		),
+	}
+}

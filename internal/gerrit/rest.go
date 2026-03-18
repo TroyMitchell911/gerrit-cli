@@ -299,3 +299,115 @@ func (c *RESTClient) RebaseChange(changeID string, base string, allowConflicts b
 
 	return change, nil
 }
+
+// ListProjects retrieves all projects
+func (c *RESTClient) ListProjects() (map[string]interface{}, error) {
+	resp, err := c.Get("projects/")
+	if err != nil {
+		return nil, err
+	}
+
+	var projects map[string]interface{}
+	if err := json.Unmarshal(resp, &projects); err != nil {
+		return nil, fmt.Errorf("failed to parse projects: %w", err)
+	}
+
+	return projects, nil
+}
+
+// ReplyComment posts a reply to an existing inline comment (creates draft then publishes)
+func (c *RESTClient) ReplyComment(changeID, revision, path, inReplyTo, message string) error {
+	apiPath := fmt.Sprintf("changes/%s/revisions/%s/drafts", changeID, revision)
+	body := map[string]interface{}{
+		"path":        path,
+		"in_reply_to": inReplyTo,
+		"message":     message,
+		"unresolved":  false,
+	}
+	if _, err := c.Put(apiPath, body); err != nil {
+		return err
+	}
+	return c.PublishDraftComments(changeID, revision)
+}
+
+func (c *RESTClient) CreateDraftComment(changeID, revision string, comment map[string]interface{}) error {
+	path := fmt.Sprintf("changes/%s/revisions/%s/drafts", changeID, revision)
+	_, err := c.Put(path, comment)
+	return err
+}
+
+// PublishDraftComments publishes all draft comments by posting an empty reply
+func (c *RESTClient) PublishDraftComments(changeID, revision string) error {
+	path := fmt.Sprintf("changes/%s/revisions/%s/review", changeID, revision)
+	body := map[string]interface{}{
+		"message": "",
+		"drafts":  "PUBLISH",
+	}
+	_, err := c.Post(path, body)
+	return err
+}
+
+// SubmitReview submits a label vote on a change
+func (c *RESTClient) SubmitReview(changeID, revision, label string, value int) error {
+	path := fmt.Sprintf("changes/%s/revisions/%s/review", changeID, revision)
+	body := map[string]interface{}{
+		"labels": map[string]int{
+			label: value,
+		},
+	}
+	_, err := c.Post(path, body)
+	return err
+}
+
+func (c *RESTClient) GetFileDiff(changeID, revision, filename string) (string, error) {
+	// URL-encode the filename
+	encodedFile := strings.ReplaceAll(filename, "/", "%2F")
+	path := fmt.Sprintf("changes/%s/revisions/%s/files/%s/diff", changeID, revision, encodedFile)
+
+	resp, err := c.Get(path)
+	if err != nil {
+		return "", err
+	}
+
+	var diff map[string]interface{}
+	if err := json.Unmarshal(resp, &diff); err != nil {
+		return "", fmt.Errorf("failed to parse diff: %w", err)
+	}
+
+	// Format as unified diff
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("--- a/%s\n", filename))
+	sb.WriteString(fmt.Sprintf("+++ b/%s\n", filename))
+
+	if content, ok := diff["content"].([]interface{}); ok {
+		lineA, lineB := 1, 1
+		for _, section := range content {
+			if s, ok := section.(map[string]interface{}); ok {
+				if ab, ok := s["ab"].([]interface{}); ok {
+					// Context lines
+					sb.WriteString(fmt.Sprintf("@@ -%d +%d @@\n", lineA, lineB))
+					for _, l := range ab {
+						sb.WriteString(fmt.Sprintf(" %v\n", l))
+						lineA++
+						lineB++
+					}
+				}
+				if a, ok := s["a"].([]interface{}); ok {
+					sb.WriteString(fmt.Sprintf("@@ -%d +%d @@\n", lineA, lineB))
+					for _, l := range a {
+						sb.WriteString(fmt.Sprintf("-%v\n", l))
+						lineA++
+					}
+				}
+				if b, ok := s["b"].([]interface{}); ok {
+					for _, l := range b {
+						sb.WriteString(fmt.Sprintf("+%v\n", l))
+						lineB++
+					}
+				}
+			}
+		}
+	}
+
+	return sb.String(), nil
+}
