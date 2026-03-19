@@ -312,10 +312,33 @@ endfunction
 " Hunk navigation
 " ============================================================
 
+function! s:IsTrivialHunk(line)
+  " Trivial: starts at line 1 of both old and new with count <= 1
+  " e.g. @@ -1 +1 @@ or @@ -1,1 +1,1 @@
+  let old_m = matchlist(a:line, '-\(\d\+\)\%(,\(\d\+\)\)\?')
+  let new_m = matchlist(a:line, '+\(\d\+\)\%(,\(\d\+\)\)\?')
+  if empty(old_m) || empty(new_m)
+    return 0
+  endif
+  let old_start = str2nr(old_m[1])
+  let old_count = old_m[2] !=# '' ? str2nr(old_m[2]) : 1
+  let new_start = str2nr(new_m[1])
+  let new_count = new_m[2] !=# '' ? str2nr(new_m[2]) : 1
+  return old_start == 1 && new_start == 1 && old_count <= 1 && new_count <= 1
+endfunction
+
 function! s:JumpToFirstHunk()
   call cursor(1, 1)
-  if search('^@@', 'Wc') == 0
+  let first = search('^@@', 'Wc')
+  if first == 0
     call cursor(1, 1)
+    return
+  endif
+  " Skip trivial file-header hunk (e.g. @@ -1 +1 @@) if a better one follows
+  if s:IsTrivialHunk(getline('.'))
+    if search('^@@', 'W') == 0
+      call cursor(first, 1)
+    endif
   endif
 endfunction
 
