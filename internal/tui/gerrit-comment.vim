@@ -14,6 +14,13 @@ endif
 
 let g:gerrit_comments = []
 
+if !exists('g:gerrit_next_hunk_key')
+  let g:gerrit_next_hunk_key = '<C-n>'
+endif
+if !exists('g:gerrit_prev_hunk_key')
+  let g:gerrit_prev_hunk_key = '<C-p>'
+endif
+
 " Highlight group
 highlight default GerritComment ctermfg=214 ctermbg=NONE guifg=#FFB86C gui=bold cterm=bold
 highlight default GerritCommentSign ctermfg=214 guifg=#FFB86C
@@ -302,12 +309,37 @@ function! s:RedrawAllComments()
 endfunction
 
 " ============================================================
+" Hunk navigation
+" ============================================================
+
+function! s:JumpToFirstHunk()
+  call cursor(1, 1)
+  if search('^@@', 'Wc') == 0
+    call cursor(1, 1)
+  endif
+endfunction
+
+function! s:JumpToNextHunk()
+  if search('^@@', 'W') == 0
+    echo 'No more hunks'
+  endif
+endfunction
+
+function! s:JumpToPrevHunk()
+  if search('^@@', 'bW') == 0
+    echo 'No previous hunks'
+  endif
+endfunction
+
+" ============================================================
 " Setup
 " ============================================================
 
 execute 'nnoremap <buffer> <silent> ' . g:gerrit_comment_key . ' :call <SID>AddComment()<CR>'
 execute 'nnoremap <buffer> <silent> ' . g:gerrit_edit_key . ' :call <SID>EditComment()<CR>'
 execute 'nnoremap <buffer> <silent> ' . g:gerrit_delete_key . ' :call <SID>DeleteComment()<CR>'
+execute 'nnoremap <buffer> <silent> ' . g:gerrit_next_hunk_key . ' :call <SID>JumpToNextHunk()<CR>'
+execute 'nnoremap <buffer> <silent> ' . g:gerrit_prev_hunk_key . ' :call <SID>JumpToPrevHunk()<CR>'
 
 " Intercept :wq - diff is read-only, comments are auto-saved
 autocmd BufWriteCmd <buffer> echohl WarningMsg | echo "Read-only diff. Use :q to exit (comments auto-saved with " . g:gerrit_comment_key . ")" | echohl None
@@ -316,6 +348,9 @@ setlocal nomodifiable
 setlocal readonly
 setlocal noswapfile
 
+" Jump to first hunk on open
+call s:JumpToFirstHunk()
+
 " Show usage hint
 redraw
-echo g:gerrit_comment_key . ": add comment | :q: exit (auto-submit on quit)"
+echo g:gerrit_comment_key . ": comment | " . g:gerrit_next_hunk_key . "/" . g:gerrit_prev_hunk_key . ": next/prev hunk | :q: exit"
