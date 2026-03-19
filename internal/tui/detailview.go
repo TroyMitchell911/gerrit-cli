@@ -47,8 +47,8 @@ type DetailView struct {
 
 	// Pane state
 	activePane   Pane
-	prevPane     Pane  // pane before switching to Diff
-	selectedFile int // selected file index in PaneDiff
+	prevPane     Pane // pane before switching to Diff
+	selectedFile int  // selected file index in PaneDiff
 
 	// Cached line counts after wrap (updated in render)
 	summaryLineCount int
@@ -66,13 +66,14 @@ type DetailView struct {
 	// Loading state
 	loading bool
 
-	// Popup state (add reviewer / CC)
-	popupActive   bool
-	popupMode     string // "reviewer" or "cc"
-	popupQuery    string
-	popupResults  []map[string]interface{}
-	popupSelected int
-	popupMessage  string // status message after action
+	// Popup state (add reviewer / CC / confirm)
+	popupActive        bool
+	popupMode          string // "reviewer", "cc", or "confirm"
+	popupQuery         string
+	popupResults       []map[string]interface{}
+	popupSelected      int
+	popupMessage       string // status message after action
+	popupConfirmAction string // action to confirm (e.g., "abandon")
 }
 
 // NewDetailView creates a new DetailView
@@ -255,6 +256,35 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Popup mode: intercept all keys
 		if dv.popupActive {
+			// Confirm mode: handle y/n
+			if dv.popupMode == "confirm" {
+				switch msg.Type {
+				case tea.KeyEscape:
+					dv.popupActive = false
+					dv.popupMode = ""
+					dv.popupConfirmAction = ""
+				case tea.KeyRunes:
+					if len(msg.Runes) > 0 {
+						switch msg.Runes[0] {
+						case 'y', 'Y':
+							action := dv.popupConfirmAction
+							dv.popupActive = false
+							dv.popupMode = ""
+							dv.popupConfirmAction = ""
+							if action == "abandon" {
+								return dv, dv.doAbandonChange()
+							}
+						case 'n', 'N':
+							dv.popupActive = false
+							dv.popupMode = ""
+							dv.popupConfirmAction = ""
+						}
+					}
+				}
+				return dv, nil
+			}
+
+			// Reviewer/CC popup mode
 			switch msg.Type {
 			case tea.KeyEscape:
 				dv.popupActive = false
@@ -444,6 +474,9 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			dv.popupSelected = 0
 			dv.popupMessage = ""
 			return dv, nil
+
+		case key.Matches(msg, dv.keys.Abandon):
+			return dv, dv.abandonChange()
 		}
 	}
 
@@ -524,7 +557,7 @@ func (dv *DetailView) renderSummaryPane() string {
 							var color string
 							switch value {
 							case 2:
-								color = "28"  // dark green
+								color = "28" // dark green
 							case 1:
 								color = "114" // light green
 							case -1:
@@ -604,6 +637,7 @@ func (dv *DetailView) renderSummaryPane() string {
 
 	return style.Width(paneWidth).Height(paneHeight).Render(content)
 }
+
 // renderDiffPane renders the diff/files pane
 func (dv *DetailView) renderDiffPane() string {
 	if dv.loading {
@@ -675,7 +709,7 @@ func (dv *DetailView) renderDiffPane() string {
 		}
 		visibleLines = lines[scroll:end]
 	}
-	
+
 	// Pad with empty lines to ensure consistent height
 	for len(visibleLines) < paneHeight {
 		visibleLines = append(visibleLines, "")
@@ -822,7 +856,7 @@ func (dv *DetailView) View() string {
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
 		Render(fmt.Sprintf(
-			"%s/%s: pane↕ | %s/%s: pane↔ | k/j: scroll | %s: fetch | %s: cherry-pick | %s/%s: CR+1/+2 | %s: TB+1 | %s: reviewer | %s: CC | %s: back",
+			"%s/%s: pane↕ | %s/%s: pane↔ | k/j: scroll | %s: fetch | %s: cherry-pick | %s/%s: CR+1/+2 | %s: TB+1 | %s: reviewer | %s: CC | %s: abandon | %s: back",
 			keyStr(dv.keys.FocusDown, "alt+j"), keyStr(dv.keys.FocusUp, "alt+k"),
 			keyStr(dv.keys.FocusLeft, "alt+h"), keyStr(dv.keys.FocusRight, "alt+l"),
 			keyStr(dv.keys.Fetch, "f"),
@@ -831,6 +865,7 @@ func (dv *DetailView) View() string {
 			keyStr(dv.keys.TestPlus1, "alt+t"),
 			keyStr(dv.keys.AddReviewer, "alt+r"),
 			keyStr(dv.keys.AddCC, "alt+x"),
+			keyStr(dv.keys.Abandon, "alt+b"),
 			keyStr(dv.keys.Back, "q"),
 		))
 
@@ -1233,9 +1268,9 @@ func wrapLines(lines []string, maxWidth int) []string {
 	return result
 }
 
-// renderPopup renders the reviewer/CC search popup
+// renderPopup renders the reviewer/CC/confirm popup
 func (dv *DetailView) renderPopup() string {
-	popupWidth := 46
+	popupWidth := 50
 
 	var lines []string
 
@@ -1251,6 +1286,11 @@ func (dv *DetailView) renderPopup() string {
 			Padding(1, 2).
 			Width(popupWidth)
 		return style.Render(strings.Join(lines, "\n"))
+	}
+
+	// Confirm mode
+	if dv.popupMode == "confirm" {
+		return dv.renderConfirmPopup()
 	}
 
 	title := "Add Reviewer"
@@ -1355,4 +1395,44 @@ func (dv *DetailView) addReviewerCmd(accountID, state, name, mode string) tea.Cm
 		err := dv.client.AddReviewer(dv.changeID, accountID, state)
 		return reviewerAddedMsg{name: name, mode: mode, success: err == nil, err: err}
 	}
+}
+
+// abandonChange returns a tea.Cmd that shows abandon confirmation popup
+func (dv *DetailView) abandonChange() tea.Cmd {
+	dv.popupActive = true
+	dv.popupMode = "confirm"
+	dv.popupConfirmAction = "abandon"
+	return nil
+}
+
+// doAbandonChange returns a tea.Cmd that actually abandons the change
+func (dv *DetailView) doAbandonChange() tea.Cmd {
+	return func() tea.Msg {
+		err := dv.client.AbandonChange(dv.changeID, "")
+		if err != nil {
+			return actionResultMsg{success: false, message: fmt.Sprintf("✗ Abandon failed: %v", err)}
+		}
+		return switchToListMsg{}
+	}
+}
+
+// renderConfirmPopup renders a confirmation popup for actions like abandon
+func (dv *DetailView) renderConfirmPopup() string {
+	popupWidth := 50
+	var lines []string
+
+	actionText := "Confirm"
+	if dv.popupConfirmAction == "abandon" {
+		actionText = "Abandon this change?"
+	}
+	lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("160")).Render(actionText))
+	lines = append(lines, "")
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("y: confirm | n/esc: cancel"))
+
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("160")).
+		Padding(1, 2).
+		Width(popupWidth)
+	return style.Render(strings.Join(lines, "\n"))
 }

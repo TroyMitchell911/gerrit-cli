@@ -36,18 +36,19 @@ type KeyMap struct {
 	FocusDown  key.Binding
 
 	// Actions
-	InlineComment  key.Binding
-	EditComment    key.Binding
-	DeleteComment  key.Binding
-	Fetch          key.Binding
-	CherryPick     key.Binding
-	ReviewPlus1    key.Binding
-	ReviewPlus2    key.Binding
-	TestPlus1      key.Binding
-	AddReviewer    key.Binding
-	AddCC          key.Binding
-	Search         key.Binding
-	ClearSearch    key.Binding
+	InlineComment key.Binding
+	EditComment   key.Binding
+	DeleteComment key.Binding
+	Fetch         key.Binding
+	CherryPick    key.Binding
+	ReviewPlus1   key.Binding
+	ReviewPlus2   key.Binding
+	TestPlus1     key.Binding
+	AddReviewer   key.Binding
+	AddCC         key.Binding
+	Search        key.Binding
+	ClearSearch   key.Binding
+	Abandon       key.Binding
 }
 
 const tuiKeysFileName = "tui_keys.json"
@@ -92,6 +93,7 @@ func DefaultKeyConfig() KeyConfig {
 			"add_cc":         {"alt+x"},
 			"search":         {"/"},
 			"clear_search":   {"esc"},
+			"abandon":        {"alt+b"},
 		},
 	}
 }
@@ -257,6 +259,10 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 		ClearSearch: key.NewBinding(
 			key.WithKeys(config.Actions["clear_search"]...),
 			key.WithHelp("esc", "clear search"),
+		),
+		Abandon: key.NewBinding(
+			key.WithKeys(config.Actions["abandon"]...),
+			key.WithHelp("alt+b", "abandon"),
 		),
 	}
 }

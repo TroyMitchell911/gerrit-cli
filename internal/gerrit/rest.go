@@ -426,3 +426,14 @@ func (c *RESTClient) SearchAccounts(query string) ([]map[string]interface{}, err
 	}
 	return accounts, nil
 }
+
+// AbandonChange abandons a change
+func (c *RESTClient) AbandonChange(changeID string, message string) error {
+	path := fmt.Sprintf("changes/%s/abandon", changeID)
+	data := map[string]interface{}{}
+	if message != "" {
+		data["message"] = message
+	}
+	_, err := c.Post(path, data)
+	return err
+}
