@@ -437,3 +437,26 @@ func (c *RESTClient) AbandonChange(changeID string, message string) error {
 	_, err := c.Post(path, data)
 	return err
 }
+
+// GetRelatedChanges gets the related changes (chain) for a change
+func (c *RESTClient) GetRelatedChanges(changeID string) ([]map[string]interface{}, error) {
+	path := fmt.Sprintf("changes/%s/revisions/current/related", changeID)
+	resp, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse related changes: %w", err)
+	}
+	if changes, ok := result["changes"].([]interface{}); ok {
+		var relatedChanges []map[string]interface{}
+		for _, ch := range changes {
+			if m, ok := ch.(map[string]interface{}); ok {
+				relatedChanges = append(relatedChanges, m)
+			}
+		}
+		return relatedChanges, nil
+	}
+	return nil, nil
+}

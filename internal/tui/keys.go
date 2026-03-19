@@ -49,6 +49,7 @@ type KeyMap struct {
 	Search        key.Binding
 	ClearSearch   key.Binding
 	Abandon       key.Binding
+	ViewChain     key.Binding
 }
 
 const tuiKeysFileName = "tui_keys.json"
@@ -94,6 +95,7 @@ func DefaultKeyConfig() KeyConfig {
 			"search":         {"/"},
 			"clear_search":   {"esc"},
 			"abandon":        {"alt+b"},
+			"view_chain":     {"tab"},
 		},
 	}
 }
@@ -263,6 +265,10 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 		Abandon: key.NewBinding(
 			key.WithKeys(config.Actions["abandon"]...),
 			key.WithHelp("alt+b", "abandon"),
+		),
+		ViewChain: key.NewBinding(
+			key.WithKeys(config.Actions["view_chain"]...),
+			key.WithHelp("tab", "view chain"),
 		),
 	}
 }

@@ -66,14 +66,15 @@ type DetailView struct {
 	// Loading state
 	loading bool
 
-	// Popup state (add reviewer / CC / confirm)
+	// Popup state (add reviewer / CC / confirm / chain)
 	popupActive        bool
-	popupMode          string // "reviewer", "cc", or "confirm"
+	popupMode          string // "reviewer", "cc", "confirm", or "chain"
 	popupQuery         string
 	popupResults       []map[string]interface{}
 	popupSelected      int
-	popupMessage       string // status message after action
-	popupConfirmAction string // action to confirm (e.g., "abandon")
+	popupMessage       string                   // status message after action
+	popupConfirmAction string                   // action to confirm (e.g., "abandon")
+	chainChanges       []map[string]interface{} // for chain view
 }
 
 // NewDetailView creates a new DetailView
@@ -247,6 +248,37 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// For now, just continue
 		return dv, nil
 
+	case relatedChangesMsg:
+		if msg.err != nil {
+			dv.popupMessage = fmt.Sprintf("✗ Failed to load chain: %v", msg.err)
+		} else {
+			dv.chainChanges = msg.changes
+			dv.popupResults = msg.changes
+			dv.popupSelected = 0
+			// Find current change in chain and select it
+			for i, ch := range msg.changes {
+				if changeNum, ok := ch["_change_number"].(float64); ok {
+					if curNum, ok := dv.change["_number"].(float64); ok && int(changeNum) == int(curNum) {
+						dv.popupSelected = i
+						break
+					}
+				}
+			}
+		}
+		return dv, nil
+
+	case switchToChangeMsg:
+		// Clear popup state and load new change
+		dv.popupActive = false
+		dv.popupMode = ""
+		dv.popupQuery = ""
+		dv.popupResults = nil
+		dv.popupSelected = 0
+		dv.chainChanges = nil
+		dv.changeID = msg.newChangeID
+		dv.loading = true
+		return dv, dv.loadDetails()
+
 	case tea.KeyMsg:
 		// Dismiss popup message on any key
 		if dv.popupMessage != "" {
@@ -278,6 +310,67 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							dv.popupActive = false
 							dv.popupMode = ""
 							dv.popupConfirmAction = ""
+						}
+					}
+				}
+				return dv, nil
+			}
+
+			// Chain mode: only navigation, no search
+			if dv.popupMode == "chain" {
+				switch msg.Type {
+				case tea.KeyEscape:
+					dv.popupActive = false
+					dv.popupMode = ""
+					dv.popupQuery = ""
+					dv.popupResults = nil
+					dv.popupSelected = 0
+					dv.chainChanges = nil
+				case tea.KeyEnter:
+					if len(dv.chainChanges) > 0 && dv.popupSelected < len(dv.chainChanges) {
+						ch := dv.chainChanges[dv.popupSelected]
+						changeID := ""
+						if id, ok := ch["change_id"].(string); ok {
+							changeID = id
+						} else if num, ok := ch["_number"].(float64); ok {
+							changeID = fmt.Sprintf("%d", int(num))
+						}
+						if changeID != "" {
+							curNum, curOk := dv.change["_number"].(float64)
+							num, numOk := ch["_change_number"].(float64)
+							if curOk && numOk && int(curNum) == int(num) {
+								// Same change, just close popup
+								dv.popupActive = false
+								dv.popupMode = ""
+								dv.popupQuery = ""
+								dv.popupResults = nil
+								dv.popupSelected = 0
+								dv.chainChanges = nil
+							} else {
+								return dv, func() tea.Msg {
+									return switchToChangeMsg{newChangeID: changeID}
+								}
+							}
+						}
+					}
+				default:
+					if msg.Type == tea.KeyUp {
+						if dv.popupSelected > 0 {
+							dv.popupSelected--
+						}
+					} else if msg.Type == tea.KeyDown {
+						if dv.popupSelected < len(dv.chainChanges)-1 {
+							dv.popupSelected++
+						}
+					} else if msg.Type == tea.KeyRunes {
+						if key.Matches(msg, dv.keys.FocusUp) {
+							if dv.popupSelected > 0 {
+								dv.popupSelected--
+							}
+						} else if key.Matches(msg, dv.keys.FocusDown) {
+							if dv.popupSelected < len(dv.chainChanges)-1 {
+								dv.popupSelected++
+							}
 						}
 					}
 				}
@@ -474,6 +567,15 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			dv.popupSelected = 0
 			dv.popupMessage = ""
 			return dv, nil
+
+		case key.Matches(msg, dv.keys.ViewChain):
+			dv.popupActive = true
+			dv.popupMode = "chain"
+			dv.popupQuery = ""
+			dv.popupResults = nil
+			dv.popupSelected = 0
+			dv.popupMessage = ""
+			return dv, dv.fetchChainChanges()
 
 		case key.Matches(msg, dv.keys.Abandon):
 			return dv, dv.abandonChange()
@@ -856,7 +958,7 @@ func (dv *DetailView) View() string {
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
 		Render(fmt.Sprintf(
-			"%s/%s: pane↕ | %s/%s: pane↔ | k/j: scroll | %s: fetch | %s: cherry-pick | %s/%s: CR+1/+2 | %s: TB+1 | %s: reviewer | %s: CC | %s: abandon | %s: back",
+			"%s/%s: pane↕ | %s/%s: pane↔ | k/j: scroll | %s: fetch | %s: cherry-pick | %s/%s: CR+1/+2 | %s: TB+1 | %s: reviewer | %s: CC | %s: chain | %s: abandon | %s: back",
 			keyStr(dv.keys.FocusDown, "alt+j"), keyStr(dv.keys.FocusUp, "alt+k"),
 			keyStr(dv.keys.FocusLeft, "alt+h"), keyStr(dv.keys.FocusRight, "alt+l"),
 			keyStr(dv.keys.Fetch, "f"),
@@ -865,6 +967,7 @@ func (dv *DetailView) View() string {
 			keyStr(dv.keys.TestPlus1, "alt+t"),
 			keyStr(dv.keys.AddReviewer, "alt+r"),
 			keyStr(dv.keys.AddCC, "alt+x"),
+			keyStr(dv.keys.ViewChain, "tab"),
 			keyStr(dv.keys.Abandon, "alt+b"),
 			keyStr(dv.keys.Back, "q"),
 		))
@@ -1198,6 +1301,17 @@ type editorFinishedMsg struct {
 	commentFile string
 }
 
+// relatedChangesMsg carries related changes for the chain view
+type relatedChangesMsg struct {
+	changes []map[string]interface{}
+	err     error
+}
+
+// switchToChangeMsg indicates switch to a new change in chain view
+type switchToChangeMsg struct {
+	newChangeID string
+}
+
 // runeWidth returns the display width of a rune (CJK = 2, others = 1)
 func runeWidth(r rune) int {
 	if r >= 0x1100 &&
@@ -1291,6 +1405,11 @@ func (dv *DetailView) renderPopup() string {
 	// Confirm mode
 	if dv.popupMode == "confirm" {
 		return dv.renderConfirmPopup()
+	}
+
+	// Chain mode
+	if dv.popupMode == "chain" {
+		return dv.renderChainPopup()
 	}
 
 	title := "Add Reviewer"
@@ -1435,4 +1554,72 @@ func (dv *DetailView) renderConfirmPopup() string {
 		Padding(1, 2).
 		Width(popupWidth)
 	return style.Render(strings.Join(lines, "\n"))
+}
+
+// renderChainPopup renders the chain popup
+func (dv *DetailView) renderChainPopup() string {
+	popupWidth := 70
+	var lines []string
+
+	lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("170")).Render("Related Changes (Chain)"))
+	lines = append(lines, "")
+
+	if len(dv.chainChanges) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("No related changes found"))
+	} else {
+		for i, ch := range dv.chainChanges {
+			changeNum := fmt.Sprintf("%v", ch["_change_number"])
+			subject := fmt.Sprintf("%v", ch["subject"])
+			project := ""
+			if p, ok := ch["project"].(string); ok {
+				project = fmt.Sprintf(" [%s]", p)
+			}
+			status := ""
+			if s, ok := ch["status"].(string); ok && s != "" && s != "NEW" {
+				status = fmt.Sprintf(" (%s)", s)
+			}
+
+			maxSubjectLen := popupWidth - 20
+			if len(subject) > maxSubjectLen {
+				subject = subject[:maxSubjectLen-3] + "..."
+			}
+
+			entry := fmt.Sprintf("#%s%s %s%s", changeNum, project, subject, status)
+			if i == dv.popupSelected {
+				isCurrent := false
+				if curNum, ok := dv.change["_number"].(float64); ok {
+					if num, ok := ch["_change_number"].(float64); ok && int(num) == int(curNum) {
+						isCurrent = true
+					}
+				}
+				if isCurrent {
+					lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("28")).Bold(true).Render("▸ [current] "+subject))
+				} else {
+					lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Bold(true).Render("▸ "+entry))
+				}
+			} else {
+				lines = append(lines, "  "+entry)
+			}
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(
+		fmt.Sprintf("↑↓/%s/%s: select | enter: view | esc: cancel",
+			keyStr(dv.keys.FocusDown, "alt+j"), keyStr(dv.keys.FocusUp, "alt+k"))))
+
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("170")).
+		Padding(1, 2).
+		Width(popupWidth)
+	return style.Render(strings.Join(lines, "\n"))
+}
+
+// fetchChainChanges returns a tea.Cmd that fetches related changes
+func (dv *DetailView) fetchChainChanges() tea.Cmd {
+	return func() tea.Msg {
+		changes, err := dv.client.GetRelatedChanges(dv.changeID)
+		return relatedChangesMsg{changes: changes, err: err}
+	}
 }
