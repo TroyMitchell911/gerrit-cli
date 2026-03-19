@@ -694,6 +694,36 @@ func (dv *DetailView) renderSummaryPane() string {
 		}
 	}
 
+	// Reviewers
+	if reviewers, ok := dv.change["reviewers"].(map[string]interface{}); ok {
+		if reviewerList, ok := reviewers["REVIEWER"].([]interface{}); ok && len(reviewerList) > 0 {
+			lines = append(lines, "")
+			lines = append(lines, "Reviewers:")
+			for _, reviewer := range reviewerList {
+				if r, ok := reviewer.(map[string]interface{}); ok {
+					name := "Unknown"
+					if n, ok := r["name"].(string); ok {
+						name = n
+					}
+					lines = append(lines, fmt.Sprintf("  %s", name))
+				}
+			}
+		}
+		if ccList, ok := reviewers["CC"].([]interface{}); ok && len(ccList) > 0 {
+			lines = append(lines, "")
+			lines = append(lines, "CC:")
+			for _, cc := range ccList {
+				if c, ok := cc.(map[string]interface{}); ok {
+					name := "Unknown"
+					if n, ok := c["name"].(string); ok {
+						name = n
+					}
+					lines = append(lines, fmt.Sprintf("  %s", name))
+				}
+			}
+		}
+	}
+
 	// Apply scroll offset (read-only, don't modify scroll variables)
 	paneHeight := dv.height/2 - 6
 
