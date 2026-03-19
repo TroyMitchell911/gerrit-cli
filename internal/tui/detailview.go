@@ -818,10 +818,21 @@ func (dv *DetailView) View() string {
 		Foreground(lipgloss.Color("170")).
 		Render(fmt.Sprintf("Change Details - %s", dv.changeID))
 
-	// Help
+	// Help - dynamically built from key bindings
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
-		Render("alt+j/k: pane↕ | alt+h/l: pane↔ | k/j: scroll | f: fetch | C: cherry-pick | alt+c/C: CR+1/+2 | alt+t: TB+1 | alt+r: reviewer | alt+x: CC | q: back")
+		Render(fmt.Sprintf(
+			"%s/%s: pane↕ | %s/%s: pane↔ | k/j: scroll | %s: fetch | %s: cherry-pick | %s/%s: CR+1/+2 | %s: TB+1 | %s: reviewer | %s: CC | %s: back",
+			keyStr(dv.keys.FocusDown, "alt+j"), keyStr(dv.keys.FocusUp, "alt+k"),
+			keyStr(dv.keys.FocusLeft, "alt+h"), keyStr(dv.keys.FocusRight, "alt+l"),
+			keyStr(dv.keys.Fetch, "f"),
+			keyStr(dv.keys.CherryPick, "C"),
+			keyStr(dv.keys.ReviewPlus1, "alt+c"), keyStr(dv.keys.ReviewPlus2, "alt+C"),
+			keyStr(dv.keys.TestPlus1, "alt+t"),
+			keyStr(dv.keys.AddReviewer, "alt+r"),
+			keyStr(dv.keys.AddCC, "alt+x"),
+			keyStr(dv.keys.Back, "q"),
+		))
 
 	// Top row: Summary and Review side by side
 	topRow := lipgloss.JoinHorizontal(
@@ -1278,7 +1289,9 @@ func (dv *DetailView) renderPopup() string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("↑↓/alt+j/k: select | enter: confirm | esc: cancel"))
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(
+		fmt.Sprintf("↑↓/%s/%s: select | enter: confirm | esc: cancel",
+			keyStr(dv.keys.FocusDown, "alt+j"), keyStr(dv.keys.FocusUp, "alt+k"))))
 
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

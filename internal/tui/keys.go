@@ -50,9 +50,15 @@ type KeyMap struct {
 	ClearSearch    key.Binding
 }
 
-const (
-	tuiKeysFileName = "tui_keys.json"
-)
+const tuiKeysFileName = "tui_keys.json"
+
+// keyStr returns the first key string for a binding, fallback to default
+func keyStr(b key.Binding, fallback string) string {
+	if keys := b.Keys(); len(keys) > 0 {
+		return keys[0]
+	}
+	return fallback
+}
 
 // DefaultKeyConfig returns the default key configuration
 func DefaultKeyConfig() KeyConfig {

@@ -552,10 +552,16 @@ func (lv *ListView) View() string {
 		Foreground(lipgloss.Color("170")).
 		Render("Gerry TUI - Change List")
 
-	// Help
+	// Help - dynamically built from key bindings
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
-		Render("alt+k/j: switch category | k/j: navigate | alt+h/l: prev/next page | /: search | enter: select | q: quit")
+		Render(fmt.Sprintf(
+			"%s/%s: category | k/j: navigate | %s/%s: page | %s: search | enter: select | %s: quit",
+			keyStr(lv.keys.FocusUp, "alt+k"), keyStr(lv.keys.FocusDown, "alt+j"),
+			keyStr(lv.keys.FocusLeft, "alt+h"), keyStr(lv.keys.FocusRight, "alt+l"),
+			keyStr(lv.keys.Search, "/"),
+			keyStr(lv.keys.Quit, "q"),
+		))
 
 	// Combine sidebar and main list
 	sidebar := lv.renderSidebar()
