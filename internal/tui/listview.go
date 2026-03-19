@@ -505,6 +505,8 @@ func (lv *ListView) renderMainList() string {
 		end = len(lv.changes)
 	}
 
+	innerWidth := mainWidth - 4 // border(2) + padding left+right(2+2) - Width includes padding
+
 	for i := scrollOffset; i < end; i++ {
 		change := lv.changes[i]
 		changeNum := fmt.Sprintf("%v", change["_number"])
@@ -515,19 +517,23 @@ func (lv *ListView) renderMainList() string {
 		line := fmt.Sprintf("%s: %s", changeNum, subject)
 		labels := formatLabels(change)
 
+		var item string
 		if i == lv.selectedItem {
 			styled := selectedItemStyle.Render("▸ " + line)
 			if labels != "" {
 				styled += " " + labels
 			}
-			items = append(items, styled)
+			item = styled
 		} else {
 			plain := "  " + line
 			if labels != "" {
 				plain += " " + labels
 			}
-			items = append(items, plain)
+			item = plain
 		}
+		// Truncate to inner width to prevent wrapping when window is narrow
+		item = lipgloss.NewStyle().MaxWidth(innerWidth).Render(item)
+		items = append(items, item)
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, items...)
