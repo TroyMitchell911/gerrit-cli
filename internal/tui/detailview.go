@@ -203,8 +203,8 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			editor = "vim"
 		}
 		initCmd := fmt.Sprintf(
-			"let g:gerrit_comment_key='%s' | let g:gerrit_comment_file='%s' | source %s",
-			msg.commentKey, msg.commentFile, msg.scriptPath,
+			"let g:gerrit_comment_key='%s' | let g:gerrit_edit_key='%s' | let g:gerrit_delete_key='%s' | let g:gerrit_comment_file='%s' | source %s",
+			msg.commentKey, msg.editKey, msg.deleteKey, msg.commentFile, msg.scriptPath,
 		)
 		cmd := exec.Command(editor, "-R", "-c", initCmd, msg.diffPath)
 		commentFile := msg.commentFile
@@ -958,10 +958,18 @@ func (dv *DetailView) openFileDiff(filename string) tea.Cmd {
 		safeFilename := strings.ReplaceAll(filename, "/", "_")
 		commentFile := fmt.Sprintf("/tmp/gerrit-%s-%s-comments.json", dv.changeID, safeFilename)
 
-		// Get comment keybinding (first key in the binding)
+		// Get comment keybindings (first key in each binding)
 		commentKey := "gc"
 		if keys := dv.keys.InlineComment.Keys(); len(keys) > 0 {
 			commentKey = keys[0]
+		}
+		editKey := "ge"
+		if keys := dv.keys.EditComment.Keys(); len(keys) > 0 {
+			editKey = keys[0]
+		}
+		deleteKey := "gd"
+		if keys := dv.keys.DeleteComment.Keys(); len(keys) > 0 {
+			deleteKey = keys[0]
 		}
 
 		return openEditorMsg{
@@ -969,6 +977,8 @@ func (dv *DetailView) openFileDiff(filename string) tea.Cmd {
 			scriptPath:  scriptFile.Name(),
 			commentFile: commentFile,
 			commentKey:  commentKey,
+			editKey:     editKey,
+			deleteKey:   deleteKey,
 		}
 	}
 }
@@ -1107,6 +1117,8 @@ type openEditorMsg struct {
 	scriptPath  string
 	commentFile string
 	commentKey  string
+	editKey     string
+	deleteKey   string
 }
 
 // commentEntry represents a single comment for selection

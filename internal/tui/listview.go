@@ -334,14 +334,14 @@ func (lv *ListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return lv, tea.Quit
 
 		// Enter search mode
-		case msg.Type == tea.KeyRunes && msg.String() == "/":
+		case msg.Type == tea.KeyRunes && msg.String() == "/" || key.Matches(msg, lv.keys.Search):
 			lv.searching = true
 			lv.searchQuery = ""
 			lv.applyFilter()
 			return lv, nil
 
 		// Clear filter with ESC when not in search mode
-		case msg.Type == tea.KeyEsc:
+		case key.Matches(msg, lv.keys.ClearSearch):
 			if lv.searchQuery != "" {
 				lv.searchQuery = ""
 				lv.changes = lv.pageChanges(lv.currentPage)

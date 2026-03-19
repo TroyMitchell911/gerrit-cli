@@ -36,14 +36,18 @@ type KeyMap struct {
 	FocusDown  key.Binding
 
 	// Actions
-	InlineComment key.Binding
-	Fetch         key.Binding
-	CherryPick    key.Binding
-	ReviewPlus1   key.Binding
-	ReviewPlus2   key.Binding
-	TestPlus1     key.Binding
-	AddReviewer   key.Binding
-	AddCC         key.Binding
+	InlineComment  key.Binding
+	EditComment    key.Binding
+	DeleteComment  key.Binding
+	Fetch          key.Binding
+	CherryPick     key.Binding
+	ReviewPlus1    key.Binding
+	ReviewPlus2    key.Binding
+	TestPlus1      key.Binding
+	AddReviewer    key.Binding
+	AddCC          key.Binding
+	Search         key.Binding
+	ClearSearch    key.Binding
 }
 
 const (
@@ -71,6 +75,8 @@ func DefaultKeyConfig() KeyConfig {
 		},
 		Actions: map[string][]string{
 			"inline_comment": {"gc"},
+			"edit_comment":   {"ge"},
+			"delete_comment": {"gd"},
 			"fetch":          {"f"},
 			"cherry_pick":    {"shift+c"},
 			"review_plus1":   {"alt+c"},
@@ -78,6 +84,8 @@ func DefaultKeyConfig() KeyConfig {
 			"test_plus1":     {"alt+t"},
 			"add_reviewer":   {"alt+r"},
 			"add_cc":         {"alt+x"},
+			"search":         {"/"},
+			"clear_search":   {"esc"},
 		},
 	}
 }
@@ -200,6 +208,14 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 			key.WithKeys(config.Actions["inline_comment"]...),
 			key.WithHelp("gc", "comment"),
 		),
+		EditComment: key.NewBinding(
+			key.WithKeys(config.Actions["edit_comment"]...),
+			key.WithHelp("ge", "edit comment"),
+		),
+		DeleteComment: key.NewBinding(
+			key.WithKeys(config.Actions["delete_comment"]...),
+			key.WithHelp("gd", "delete comment"),
+		),
 		Fetch: key.NewBinding(
 			key.WithKeys(config.Actions["fetch"]...),
 			key.WithHelp("f", "fetch"),
@@ -227,6 +243,14 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 		AddCC: key.NewBinding(
 			key.WithKeys(config.Actions["add_cc"]...),
 			key.WithHelp("alt+x", "add CC"),
+		),
+		Search: key.NewBinding(
+			key.WithKeys(config.Actions["search"]...),
+			key.WithHelp("/", "search"),
+		),
+		ClearSearch: key.NewBinding(
+			key.WithKeys(config.Actions["clear_search"]...),
+			key.WithHelp("esc", "clear search"),
 		),
 	}
 }

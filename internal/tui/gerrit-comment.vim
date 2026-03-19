@@ -306,8 +306,8 @@ endfunction
 " ============================================================
 
 execute 'nnoremap <buffer> <silent> ' . g:gerrit_comment_key . ' :call <SID>AddComment()<CR>'
-execute 'nnoremap <buffer> <silent> ge :call <SID>EditComment()<CR>'
-execute 'nnoremap <buffer> <silent> gd :call <SID>DeleteComment()<CR>'
+execute 'nnoremap <buffer> <silent> ' . g:gerrit_edit_key . ' :call <SID>EditComment()<CR>'
+execute 'nnoremap <buffer> <silent> ' . g:gerrit_delete_key . ' :call <SID>DeleteComment()<CR>'
 
 " Intercept :wq - diff is read-only, comments are auto-saved
 autocmd BufWriteCmd <buffer> echohl WarningMsg | echo "Read-only diff. Use :q to exit (comments auto-saved with " . g:gerrit_comment_key . ")" | echohl None
