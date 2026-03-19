@@ -624,9 +624,8 @@ func (dv *DetailView) renderSummaryPane() string {
 	lines = append(lines, fmt.Sprintf("Status: %v", dv.change["status"]))
 
 	// Labels (Code-Review, Verified, etc.) - show individual votes
-	if labels, ok := dv.change["labels"].(map[string]interface{}); ok {
-		lines = append(lines, "")
-		lines = append(lines, "Labels:")
+	var labelLines []string
+	if labels, ok := dv.change["labels"].(map[string]interface{}); ok && len(labels) > 0 {
 		labelNames := make([]string, 0, len(labels))
 		for label := range labels {
 			labelNames = append(labelNames, label)
@@ -668,7 +667,7 @@ func (dv *DetailView) renderSummaryPane() string {
 								color = "160" // dark red
 							}
 							colored := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(scoreText)
-							lines = append(lines, fmt.Sprintf("  %s %s", colored, name))
+							labelLines = append(labelLines, fmt.Sprintf("  %s %s", colored, name))
 						}
 					}
 				} else {
@@ -679,7 +678,7 @@ func (dv *DetailView) renderSummaryPane() string {
 						if label == "Verified" {
 							colored = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Render(prefix + "1")
 						}
-						lines = append(lines, fmt.Sprintf("  %s %s", colored, name))
+						labelLines = append(labelLines, fmt.Sprintf("  %s %s", colored, name))
 					}
 					if rejected, ok := labelData["rejected"].(map[string]interface{}); ok {
 						name := fmt.Sprintf("%v", rejected["name"])
@@ -687,11 +686,16 @@ func (dv *DetailView) renderSummaryPane() string {
 						if label == "Verified" {
 							colored = lipgloss.NewStyle().Foreground(lipgloss.Color("210")).Render(prefix + "-1")
 						}
-						lines = append(lines, fmt.Sprintf("  %s %s", colored, name))
+						labelLines = append(labelLines, fmt.Sprintf("  %s %s", colored, name))
 					}
 				}
 			}
 		}
+	}
+	if len(labelLines) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "Labels:")
+		lines = append(lines, labelLines...)
 	}
 
 	// Reviewers
