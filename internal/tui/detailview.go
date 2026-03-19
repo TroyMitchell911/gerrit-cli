@@ -238,6 +238,8 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				label = "CC"
 			}
 			dv.popupMessage = fmt.Sprintf("✓ Added %s as %s", msg.name, label)
+			dv.loading = true
+			return dv, dv.loadDetails()
 		} else {
 			dv.popupMessage = fmt.Sprintf("✗ Failed: %v", msg.err)
 		}
