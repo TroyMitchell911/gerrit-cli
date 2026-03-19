@@ -53,7 +53,7 @@ type ListView struct {
 // NewListView creates a new ListView
 func NewListView(cfg *config.Config, keys KeyMap) *ListView {
 	client := gerrit.NewRESTClient(cfg)
-	
+
 	// Load projects config
 	projectsConfig, err := LoadProjectsConfig(client)
 	var projects []string
@@ -63,24 +63,24 @@ func NewListView(cfg *config.Config, keys KeyMap) *ListView {
 	} else {
 		projects = projectsConfig.Visible
 	}
-	
+
 	// Build categories: fixed 3 + projects
 	categories := []string{"My List", "Team", "All Open"}
 	categories = append(categories, projects...)
-	
+
 	return &ListView{
-		cfg:         cfg,
-		keys:        keys,
-		client:      client,
-		categories:  categories,
-		projects:    projects,
-		selectedCat: 0,
-		changes:     []map[string]interface{}{},
+		cfg:          cfg,
+		keys:         keys,
+		client:       client,
+		categories:   categories,
+		projects:     projects,
+		selectedCat:  0,
+		changes:      []map[string]interface{}{},
 		selectedItem: 0,
-		loading:     false,
-		currentPage: 0,
-		pageSize:    20, // will be recalculated on first WindowSizeMsg
-		totalPages:  1,
+		loading:      false,
+		currentPage:  0,
+		pageSize:     20, // will be recalculated on first WindowSizeMsg
+		totalPages:   1,
 	}
 }
 
@@ -277,9 +277,18 @@ func (lv *ListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return lv, nil
 
 	case changesLoadedMsg:
+		// Preserve selection across refresh
+		prevSelected := lv.selectedItem
+		prevChanges := lv.changes
+		prevChangeID := ""
+		if prevSelected >= 0 && prevSelected < len(prevChanges) {
+			if id, ok := prevChanges[prevSelected]["change_id"].(string); ok {
+				prevChangeID = id
+			}
+		}
+
 		lv.allChanges = msg.changes
 		lv.loading = false
-		lv.selectedItem = 0
 		lv.currentPage = 0
 		// Use dynamic pageSize based on window height
 		lv.pageSize = lv.height - 8
@@ -296,6 +305,25 @@ func (lv *ListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			lv.applyFilter()
 		} else {
 			lv.changes = lv.pageChanges(0)
+		}
+
+		// Restore selection if possible
+		if prevChangeID != "" {
+			for i, ch := range lv.changes {
+				if id, ok := ch["change_id"].(string); ok && id == prevChangeID {
+					lv.selectedItem = i
+					break
+				}
+			}
+			// If not found, try to find a nearby item
+			if lv.selectedItem >= len(lv.changes) {
+				lv.selectedItem = len(lv.changes) - 1
+			}
+			if lv.selectedItem < 0 {
+				lv.selectedItem = 0
+			}
+		} else {
+			lv.selectedItem = 0
 		}
 		return lv, nil
 
@@ -566,7 +594,7 @@ func (lv *ListView) View() string {
 	// Combine sidebar and main list
 	sidebar := lv.renderSidebar()
 	mainList := lv.renderMainList()
-	
+
 	content := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, mainList)
 
 	// Combine all parts
