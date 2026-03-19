@@ -71,9 +71,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.detailView.Init()
 
 	case switchToListMsg:
-		// Switch back to list view
 		m.currentView = ViewTypeList
-		return m, nil
+		return m, m.listView.loadChanges()
 	}
 
 	// Forward to current view

@@ -244,8 +244,10 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return dv, nil
 
 	case actionResultMsg:
-		// Handle action result (could show in status bar)
-		// For now, just continue
+		if msg.success {
+			dv.loading = true
+			return dv, dv.loadDetails()
+		}
 		return dv, nil
 
 	case relatedChangesMsg:
