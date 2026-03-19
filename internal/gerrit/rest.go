@@ -410,8 +410,12 @@ func (c *RESTClient) GetFileDiff(changeID, revision, filename string) (string, e
 						lineB++
 					}
 				}
-				if a, ok := s["a"].([]interface{}); ok {
+				_, hasA := s["a"]
+				_, hasB := s["b"]
+				if hasA || hasB {
 					sb.WriteString(fmt.Sprintf("@@ -%d +%d @@\n", lineA, lineB))
+				}
+				if a, ok := s["a"].([]interface{}); ok {
 					for _, l := range a {
 						sb.WriteString(fmt.Sprintf("-%v\n", l))
 						lineA++
