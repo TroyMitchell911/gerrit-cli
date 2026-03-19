@@ -28,6 +28,15 @@ const (
 	PaneReview
 )
 
+// summaryItem represents a selectable item in the Summary pane
+type summaryItem struct {
+	itemType  string // "reviewer", "cc", "vote"
+	name      string // display name
+	accountID string // account ID for reviewer/CC
+	label     string // label name for votes (e.g., "Code-Review")
+	value     int    // vote value for votes
+}
+
 // DetailView represents the detail view with multiple panes
 type DetailView struct {
 	cfg    *config.Config
@@ -44,6 +53,10 @@ type DetailView struct {
 	// Comment selection
 	commentList     []commentEntry // flat ordered list of comments for selection
 	selectedComment int            // selected comment index in PaneReview
+
+	// Summary pane selection
+	summaryItems    []summaryItem // list of selectable items in Summary pane
+	selectedSummary int           // selected item index in Summary pane
 
 	// Pane state
 	activePane   Pane
@@ -68,12 +81,13 @@ type DetailView struct {
 
 	// Popup state (add reviewer / CC / confirm / chain)
 	popupActive        bool
-	popupMode          string // "reviewer", "cc", "confirm", or "chain"
+	popupMode          string // "reviewer", "cc", "confirm", "chain", or "delete"
 	popupQuery         string
 	popupResults       []map[string]interface{}
 	popupSelected      int
 	popupMessage       string                   // status message after action
 	popupConfirmAction string                   // action to confirm (e.g., "abandon")
+	popupConfirmData   map[string]interface{}   // data for confirm action
 	chainChanges       []map[string]interface{} // for chain view
 }
 
@@ -248,8 +262,11 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case actionResultMsg:
 		if msg.success {
 			dv.loading = true
+			dv.selectedSummary = 0 // Reset selection
+			dv.summaryItems = nil
 			return dv, dv.loadDetails()
 		}
+		dv.popupMessage = msg.message
 		return dv, nil
 
 	case relatedChangesMsg:
@@ -292,28 +309,49 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Popup mode: intercept all keys
 		if dv.popupActive {
-			// Confirm mode: handle y/n
-			if dv.popupMode == "confirm" {
+			// Confirm mode (abandon) or delete mode: handle y/n
+			if dv.popupMode == "confirm" || dv.popupMode == "delete" {
 				switch msg.Type {
 				case tea.KeyEscape:
 					dv.popupActive = false
 					dv.popupMode = ""
 					dv.popupConfirmAction = ""
+					dv.popupConfirmData = nil
 				case tea.KeyRunes:
 					if len(msg.Runes) > 0 {
 						switch msg.Runes[0] {
 						case 'y', 'Y':
 							action := dv.popupConfirmAction
+							data := dv.popupConfirmData
 							dv.popupActive = false
 							dv.popupMode = ""
 							dv.popupConfirmAction = ""
-							if action == "abandon" {
+							dv.popupConfirmData = nil
+							switch action {
+							case "abandon":
 								return dv, dv.doAbandonChange()
+							case "delete_reviewer":
+								if data != nil {
+									accountID := data["accountID"].(string)
+									return dv, dv.doDeleteReviewer(accountID)
+								}
+							case "delete_cc":
+								if data != nil {
+									accountID := data["accountID"].(string)
+									return dv, dv.doDeleteCC(accountID)
+								}
+							case "delete_vote":
+								if data != nil {
+									accountID := data["accountID"].(string)
+									label := data["label"].(string)
+									return dv, dv.doDeleteVote(accountID, label)
+								}
 							}
 						case 'n', 'N':
 							dv.popupActive = false
 							dv.popupMode = ""
 							dv.popupConfirmAction = ""
+							dv.popupConfirmData = nil
 						}
 					}
 				}
@@ -492,8 +530,8 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, dv.keys.Up):
 			switch dv.activePane {
 			case PaneSummary:
-				if dv.summaryScroll > 0 {
-					dv.summaryScroll--
+				if dv.selectedSummary > 0 {
+					dv.selectedSummary--
 				}
 			case PaneDiff:
 				if dv.selectedFile > 0 {
@@ -506,15 +544,10 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, dv.keys.Down):
-			paneHeight := dv.height/2 - 6
 			switch dv.activePane {
 			case PaneSummary:
-				maxScroll := dv.summaryLineCount - paneHeight
-				if maxScroll < 0 {
-					maxScroll = 0
-				}
-				if dv.summaryScroll < maxScroll {
-					dv.summaryScroll++
+				if dv.selectedSummary < len(dv.summaryItems)-1 {
+					dv.selectedSummary++
 				}
 			case PaneDiff:
 				if dv.selectedFile < len(dv.fileList)-1 {
@@ -583,6 +616,43 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, dv.keys.Abandon):
 			return dv, dv.abandonChange()
+
+		case key.Matches(msg, dv.keys.Delete):
+			// Delete selected item in Summary pane
+			if dv.activePane == PaneSummary && dv.selectedSummary < len(dv.summaryItems) {
+				item := dv.summaryItems[dv.selectedSummary]
+				switch item.itemType {
+				case "reviewer":
+					dv.popupActive = true
+					dv.popupMode = "delete"
+					dv.popupConfirmAction = "delete_reviewer"
+					dv.popupMessage = ""
+					dv.popupConfirmData = map[string]interface{}{
+						"name":      item.name,
+						"accountID": item.accountID,
+					}
+				case "cc":
+					dv.popupActive = true
+					dv.popupMode = "delete"
+					dv.popupConfirmAction = "delete_cc"
+					dv.popupMessage = ""
+					dv.popupConfirmData = map[string]interface{}{
+						"name":      item.name,
+						"accountID": item.accountID,
+					}
+				case "vote":
+					dv.popupActive = true
+					dv.popupMode = "delete"
+					dv.popupConfirmAction = "delete_vote"
+					dv.popupMessage = ""
+					dv.popupConfirmData = map[string]interface{}{
+						"name":      item.name,
+						"accountID": item.accountID,
+						"label":     item.label,
+						"value":     item.value,
+					}
+				}
+			}
 		}
 	}
 
@@ -609,6 +679,7 @@ func (dv *DetailView) renderSummaryPane() string {
 	}
 
 	var lines []string
+	dv.summaryItems = nil // reset selectable items
 
 	// Subject
 	subject := fmt.Sprintf("%v", dv.change["subject"])
@@ -628,7 +699,6 @@ func (dv *DetailView) renderSummaryPane() string {
 	lines = append(lines, fmt.Sprintf("Status: %v", dv.change["status"]))
 
 	// Labels (Code-Review, Verified, etc.) - show individual votes
-	var labelLines []string
 	if labels, ok := dv.change["labels"].(map[string]interface{}); ok && len(labels) > 0 {
 		labelNames := make([]string, 0, len(labels))
 		for label := range labels {
@@ -638,11 +708,6 @@ func (dv *DetailView) renderSummaryPane() string {
 		for _, label := range labelNames {
 			data := labels[label]
 			if labelData, ok := data.(map[string]interface{}); ok {
-				prefix := "C"
-				if label == "Verified" {
-					prefix = "T"
-				}
-				_ = prefix // prefix no longer used for main display; kept for fallback
 				// Show individual votes from "all" array
 				if allVotes, ok := labelData["all"].([]interface{}); ok {
 					for _, vote := range allVotes {
@@ -658,48 +723,47 @@ func (dv *DetailView) renderSummaryPane() string {
 							if n, ok := v["name"].(string); ok {
 								name = n
 							}
+							accountID := ""
+							if id, ok := v["_account_id"].(float64); ok {
+								accountID = fmt.Sprintf("%d", int(id))
+							}
+
+							// Add to selectable items
+							itemIdx := len(dv.summaryItems)
+							dv.summaryItems = append(dv.summaryItems, summaryItem{
+								itemType:  "vote",
+								name:      name,
+								accountID: accountID,
+								label:     label,
+								value:     value,
+							})
+
 							scoreText := fmt.Sprintf("%s %+d", label, value)
 							var color string
 							switch value {
 							case 2:
-								color = "28" // dark green
+								color = "28"
 							case 1:
-								color = "114" // light green
+								color = "114"
 							case -1:
-								color = "210" // light red
+								color = "210"
 							case -2:
-								color = "160" // dark red
+								color = "160"
 							}
 							colored := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(scoreText)
-							labelLines = append(labelLines, fmt.Sprintf("  %s %s", colored, name))
+							line := fmt.Sprintf("  %s %s", colored, name)
+
+							// Add selection marker if in Summary pane and this item is selected
+							if dv.activePane == PaneSummary && itemIdx == dv.selectedSummary {
+								line = fmt.Sprintf("▸ %s %s", colored, name)
+								line = lipgloss.NewStyle().Background(lipgloss.Color("238")).Render(line)
+							}
+							lines = append(lines, line)
 						}
-					}
-				} else {
-					// Fallback: use summary fields if "all" not available
-					if approved, ok := labelData["approved"].(map[string]interface{}); ok {
-						name := fmt.Sprintf("%v", approved["name"])
-						colored := lipgloss.NewStyle().Foreground(lipgloss.Color("28")).Render(prefix + "2")
-						if label == "Verified" {
-							colored = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Render(prefix + "1")
-						}
-						labelLines = append(labelLines, fmt.Sprintf("  %s %s", colored, name))
-					}
-					if rejected, ok := labelData["rejected"].(map[string]interface{}); ok {
-						name := fmt.Sprintf("%v", rejected["name"])
-						colored := lipgloss.NewStyle().Foreground(lipgloss.Color("160")).Render(prefix + "-2")
-						if label == "Verified" {
-							colored = lipgloss.NewStyle().Foreground(lipgloss.Color("210")).Render(prefix + "-1")
-						}
-						labelLines = append(labelLines, fmt.Sprintf("  %s %s", colored, name))
 					}
 				}
 			}
 		}
-	}
-	if len(labelLines) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, "Labels:")
-		lines = append(lines, labelLines...)
 	}
 
 	// Reviewers
@@ -713,7 +777,34 @@ func (dv *DetailView) renderSummaryPane() string {
 					if n, ok := r["name"].(string); ok {
 						name = n
 					}
-					lines = append(lines, fmt.Sprintf("  %s", name))
+					accountID := ""
+					if id, ok := r["_account_id"].(float64); ok {
+						accountID = fmt.Sprintf("%d", int(id))
+					}
+
+					// Add to selectable items (skip owner)
+					isOwner := false
+					if ownerData, ok := dv.change["owner"].(map[string]interface{}); ok {
+						if ownerID, ok := ownerData["_account_id"].(float64); ok && accountID != "" {
+							isOwner = fmt.Sprintf("%d", int(ownerID)) == accountID
+						}
+					}
+
+					itemIdx := len(dv.summaryItems)
+					if !isOwner {
+						dv.summaryItems = append(dv.summaryItems, summaryItem{
+							itemType:  "reviewer",
+							name:      name,
+							accountID: accountID,
+						})
+					}
+
+					line := fmt.Sprintf("  %s", name)
+					if dv.activePane == PaneSummary && !isOwner && itemIdx == dv.selectedSummary {
+						line = fmt.Sprintf("▸ %s", name)
+						line = lipgloss.NewStyle().Background(lipgloss.Color("238")).Render(line)
+					}
+					lines = append(lines, line)
 				}
 			}
 		}
@@ -726,7 +817,24 @@ func (dv *DetailView) renderSummaryPane() string {
 					if n, ok := c["name"].(string); ok {
 						name = n
 					}
-					lines = append(lines, fmt.Sprintf("  %s", name))
+					accountID := ""
+					if id, ok := c["_account_id"].(float64); ok {
+						accountID = fmt.Sprintf("%d", int(id))
+					}
+
+					itemIdx := len(dv.summaryItems)
+					dv.summaryItems = append(dv.summaryItems, summaryItem{
+						itemType:  "cc",
+						name:      name,
+						accountID: accountID,
+					})
+
+					line := fmt.Sprintf("  %s", name)
+					if dv.activePane == PaneSummary && itemIdx == dv.selectedSummary {
+						line = fmt.Sprintf("▸ %s", name)
+						line = lipgloss.NewStyle().Background(lipgloss.Color("238")).Render(line)
+					}
+					lines = append(lines, line)
 				}
 			}
 		}
@@ -735,8 +843,15 @@ func (dv *DetailView) renderSummaryPane() string {
 	// Apply scroll offset (read-only, don't modify scroll variables)
 	paneHeight := dv.height/2 - 6
 
+	// Calculate actual content width: paneWidth - 4 (border padding) - 4 (style padding)
+	paneWidth := dv.width/2 - 4
+	wrapWidth := paneWidth - 8
+	if wrapWidth < 20 {
+		wrapWidth = 20
+	}
+
 	// Wrap lines then scroll
-	wrappedLines := wrapLines(lines, dv.width/2-10)
+	wrappedLines := wrapLines(lines, wrapWidth)
 	dv.summaryLineCount = len(wrappedLines)
 
 	maxScroll := 0
@@ -772,7 +887,6 @@ func (dv *DetailView) renderSummaryPane() string {
 		style = activePaneStyle
 	}
 
-	paneWidth := dv.width/2 - 4
 	paneHeight = dv.height/2 - 6
 
 	return style.Width(paneWidth).Height(paneHeight).Render(content)
@@ -1372,16 +1486,37 @@ func runeWidth(r rune) int {
 	return 1
 }
 
-// stringWidth returns the display width of a string
-func stringWidth(s string) int {
-	w := 0
+// stripANSI removes ANSI escape sequences from a string
+func stripANSI(s string) string {
+	var result []rune
+	inEscape := false
 	for _, r := range s {
-		w += runeWidth(r)
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if r == 'm' {
+				inEscape = false
+			}
+			continue
+		}
+		result = append(result, r)
 	}
-	return w
+	return string(result)
 }
 
-// wrapLine wraps a single line by display width (CJK chars count as 2)
+// stringWidth returns the display width of a string (ignoring ANSI codes)
+func stringWidth(s string) int {
+	return lipgloss.Width(stripANSI(s))
+}
+
+// visualLen returns the visual length of a string without ANSI codes
+func visualLen(s string) int {
+	return len(stripANSI(s))
+}
+
+// wrapLine wraps a single line by display width (CJK chars count as 2, ANSI codes ignored)
 func wrapLine(line string, maxWidth int) []string {
 	if maxWidth <= 0 {
 		return []string{line}
@@ -1389,26 +1524,85 @@ func wrapLine(line string, maxWidth int) []string {
 	if stringWidth(line) <= maxWidth {
 		return []string{line}
 	}
-	var result []string
-	runes := []rune(line)
-	for len(runes) > 0 {
-		w := 0
-		i := 0
-		for i < len(runes) {
-			rw := runeWidth(runes[i])
-			if w+rw > maxWidth {
-				break
-			}
-			w += rw
-			i++
-		}
-		if i == 0 {
-			i = 1 // at least one rune per line
-		}
-		result = append(result, string(runes[:i]))
-		runes = runes[i:]
+
+	// Extract ANSI codes and their positions
+	var segments []struct {
+		text   string
+		isANSI bool
 	}
-	return result
+	var currentSegment []rune
+	inANSI := false
+
+	for _, r := range []rune(line) {
+		if r == '\x1b' {
+			if !inANSI && len(currentSegment) > 0 {
+				segments = append(segments, struct {
+					text   string
+					isANSI bool
+				}{string(currentSegment), false})
+				currentSegment = nil
+			}
+			inANSI = true
+			currentSegment = append(currentSegment, r)
+		} else if inANSI {
+			currentSegment = append(currentSegment, r)
+			if r == 'm' {
+				segments = append(segments, struct {
+					text   string
+					isANSI bool
+				}{string(currentSegment), true})
+				currentSegment = nil
+				inANSI = false
+			}
+		} else {
+			currentSegment = append(currentSegment, r)
+		}
+	}
+	if len(currentSegment) > 0 {
+		segments = append(segments, struct {
+			text   string
+			isANSI bool
+		}{string(currentSegment), false})
+	}
+
+	// Build wrapped lines preserving ANSI codes
+	var wrappedLines []string
+	var currentANSI string
+	var currentLine []rune
+	currentWidth := 0
+
+	for _, seg := range segments {
+		if seg.isANSI {
+			currentANSI += seg.text
+			currentLine = append(currentLine, []rune(seg.text)...)
+		} else {
+			textRunes := []rune(seg.text)
+			for _, r := range textRunes {
+				rw := runeWidth(r)
+				if currentWidth+rw > maxWidth && currentWidth > 0 {
+					// Wrap: save current line and start new one
+					wrappedLines = append(wrappedLines, string(currentLine))
+					currentLine = []rune{}
+					currentWidth = 0
+					// Add current ANSI state for continuation
+					if currentANSI != "" {
+						currentLine = append(currentLine, []rune(currentANSI)...)
+					}
+				}
+				currentLine = append(currentLine, r)
+				currentWidth += rw
+			}
+		}
+	}
+
+	if len(currentLine) > 0 {
+		wrappedLines = append(wrappedLines, string(currentLine))
+	}
+
+	if len(wrappedLines) == 0 {
+		return []string{line}
+	}
+	return wrappedLines
 }
 
 // wrapLines wraps a slice of lines, expanding each into multiple lines if needed
@@ -1441,7 +1635,7 @@ func (dv *DetailView) renderPopup() string {
 	}
 
 	// Confirm mode
-	if dv.popupMode == "confirm" {
+	if dv.popupMode == "confirm" || dv.popupMode == "delete" {
 		return dv.renderConfirmPopup()
 	}
 
@@ -1573,6 +1767,39 @@ func (dv *DetailView) doAbandonChange() tea.Cmd {
 	}
 }
 
+// doDeleteReviewer deletes a reviewer from the change
+func (dv *DetailView) doDeleteReviewer(accountID string) tea.Cmd {
+	return func() tea.Msg {
+		err := dv.client.RemoveReviewer(dv.changeID, accountID)
+		if err != nil {
+			return actionResultMsg{success: false, message: fmt.Sprintf("✗ Failed to remove reviewer: %v", err)}
+		}
+		return actionResultMsg{success: true, message: "✓ Reviewer removed"}
+	}
+}
+
+// doDeleteCC deletes a CC from the change
+func (dv *DetailView) doDeleteCC(accountID string) tea.Cmd {
+	return func() tea.Msg {
+		err := dv.client.RemoveReviewer(dv.changeID, accountID)
+		if err != nil {
+			return actionResultMsg{success: false, message: fmt.Sprintf("✗ Failed to remove CC: %v", err)}
+		}
+		return actionResultMsg{success: true, message: "✓ CC removed"}
+	}
+}
+
+// doDeleteVote deletes a vote from the change
+func (dv *DetailView) doDeleteVote(accountID string, label string) tea.Cmd {
+	return func() tea.Msg {
+		err := dv.client.DeleteVote(dv.changeID, accountID, label)
+		if err != nil {
+			return actionResultMsg{success: false, message: fmt.Sprintf("✗ Failed to delete vote: %v", err)}
+		}
+		return actionResultMsg{success: true, message: "✓ Vote removed"}
+	}
+}
+
 // renderConfirmPopup renders a confirmation popup for actions like abandon
 func (dv *DetailView) renderConfirmPopup() string {
 	popupWidth := 50
@@ -1581,6 +1808,17 @@ func (dv *DetailView) renderConfirmPopup() string {
 	actionText := "Confirm"
 	if dv.popupConfirmAction == "abandon" {
 		actionText = "Abandon this change?"
+	} else if dv.popupConfirmAction == "delete_reviewer" && dv.popupConfirmData != nil {
+		name := dv.popupConfirmData["name"].(string)
+		actionText = fmt.Sprintf("Remove reviewer: %s?", name)
+	} else if dv.popupConfirmAction == "delete_cc" && dv.popupConfirmData != nil {
+		name := dv.popupConfirmData["name"].(string)
+		actionText = fmt.Sprintf("Remove CC: %s?", name)
+	} else if dv.popupConfirmAction == "delete_vote" && dv.popupConfirmData != nil {
+		name := dv.popupConfirmData["name"].(string)
+		label := dv.popupConfirmData["label"].(string)
+		value := dv.popupConfirmData["value"].(int)
+		actionText = fmt.Sprintf("Remove %s %+d from %s?", label, value, name)
 	}
 	lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("160")).Render(actionText))
 	lines = append(lines, "")

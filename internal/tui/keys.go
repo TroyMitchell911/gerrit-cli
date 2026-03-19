@@ -50,6 +50,7 @@ type KeyMap struct {
 	ClearSearch   key.Binding
 	Abandon       key.Binding
 	ViewChain     key.Binding
+	Delete        key.Binding // delete selected item (vote/reviewer/cc)
 }
 
 const tuiKeysFileName = "tui_keys.json"
@@ -96,6 +97,7 @@ func DefaultKeyConfig() KeyConfig {
 			"clear_search":   {"esc"},
 			"abandon":        {"alt+b"},
 			"view_chain":     {"tab"},
+			"delete":         {"x"},
 		},
 	}
 }
@@ -269,6 +271,10 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 		ViewChain: key.NewBinding(
 			key.WithKeys(config.Actions["view_chain"]...),
 			key.WithHelp("tab", "view chain"),
+		),
+		Delete: key.NewBinding(
+			key.WithKeys(config.Actions["delete"]...),
+			key.WithHelp("x", "delete selected"),
 		),
 	}
 }

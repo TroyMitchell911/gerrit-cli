@@ -153,7 +153,24 @@ func (c *RESTClient) Delete(path string) error {
 	}
 	defer resp.Body.Close()
 
+	// Read and discard body to ensure connection reuse
+	io.Copy(io.Discard, resp.Body)
 	return nil
+}
+
+// DeleteVote deletes a vote from a reviewer on a change
+// Gerrit requires POST method with "delete" labelfor removing votes
+func (c *RESTClient) DeleteVote(changeID string, reviewerID string, label string) error {
+	path := fmt.Sprintf("changes/%s/reviewers/%s/votes/%s/delete", changeID, reviewerID, label)
+	_, err := c.Post(path, nil)
+	return err
+}
+
+// RemoveReviewer removes a reviewer or CC from a change
+func (c *RESTClient) RemoveReviewer(changeID string, reviewerID string) error {
+	path := fmt.Sprintf("changes/%s/reviewers/%s/delete", changeID, reviewerID)
+	_, err := c.Post(path, nil)
+	return err
 }
 
 // TestConnection tests the REST API connection
