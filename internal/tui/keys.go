@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 )
@@ -51,6 +52,10 @@ type KeyMap struct {
 	Abandon       key.Binding
 	ViewChain     key.Binding
 	Delete        key.Binding // delete selected item (vote/reviewer/cc)
+
+	// Diff navigation (used inside vim/nvim via plugin)
+	DiffNextHunk key.Binding
+	DiffPrevHunk key.Binding
 }
 
 const tuiKeysFileName = "tui_keys.json"
@@ -95,10 +100,27 @@ func DefaultKeyConfig() KeyConfig {
 			"add_cc":         {"alt+x"},
 			"search":         {"/"},
 			"clear_search":   {"esc"},
-			"abandon":        {"alt+b"},
-			"view_chain":     {"tab"},
-			"delete":         {"x"},
+			"abandon":         {"alt+b"},
+			"view_chain":      {"tab"},
+			"delete":          {"x"},
+			"diff_next_hunk":  {"ctrl+n"},
+			"diff_prev_hunk":  {"ctrl+p"},
 		},
+	}
+}
+
+// gerryKeyToVim converts a gerry key string (e.g. "ctrl+n") to vim key notation (e.g. "<C-n>")
+func gerryKeyToVim(k string) string {
+	lower := strings.ToLower(k)
+	switch {
+	case strings.HasPrefix(lower, "ctrl+"):
+		return "<C-" + lower[5:] + ">"
+	case strings.HasPrefix(lower, "alt+"):
+		return "<M-" + lower[4:] + ">"
+	case strings.HasPrefix(lower, "shift+"):
+		return "<S-" + lower[6:] + ">"
+	default:
+		return k
 	}
 }
 
@@ -275,6 +297,14 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 		Delete: key.NewBinding(
 			key.WithKeys(config.Actions["delete"]...),
 			key.WithHelp("x", "delete selected"),
+		),
+		DiffNextHunk: key.NewBinding(
+			key.WithKeys(config.Actions["diff_next_hunk"]...),
+			key.WithHelp("ctrl+n", "next hunk"),
+		),
+		DiffPrevHunk: key.NewBinding(
+			key.WithKeys(config.Actions["diff_prev_hunk"]...),
+			key.WithHelp("ctrl+p", "prev hunk"),
 		),
 	}
 }
