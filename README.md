@@ -326,6 +326,9 @@ A full-featured TUI with three views:
 - `gc`: add comment at current line
 - `ge`: edit comment near current line
 - `gd`: delete comment near current line
+- `ctrl+n`: jump to next hunk (change point)
+- `ctrl+p`: jump to previous hunk (change point)
+- on open: automatically jumps to the first hunk
 - `:q`: exit — comments are auto-submitted to Gerrit as published inline comments
 
 **Configuration files**
