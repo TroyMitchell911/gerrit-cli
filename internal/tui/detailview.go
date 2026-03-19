@@ -219,8 +219,8 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			editor = "vim"
 		}
 		initCmd := fmt.Sprintf(
-			"let g:gerrit_comment_key='%s' | let g:gerrit_edit_key='%s' | let g:gerrit_delete_key='%s' | let g:gerrit_comment_file='%s' | source %s",
-			msg.commentKey, msg.editKey, msg.deleteKey, msg.commentFile, msg.scriptPath,
+			"let g:gerrit_comment_key='%s' | let g:gerrit_edit_key='%s' | let g:gerrit_delete_key='%s' | let g:gerrit_comment_file='%s' | let g:gerrit_next_hunk_key='%s' | let g:gerrit_prev_hunk_key='%s' | source %s",
+			msg.commentKey, msg.editKey, msg.deleteKey, msg.commentFile, msg.nextHunkKey, msg.prevHunkKey, msg.scriptPath,
 		)
 		cmd := exec.Command(editor, "-R", "-c", initCmd, msg.diffPath)
 		commentFile := msg.commentFile
@@ -1273,6 +1273,15 @@ func (dv *DetailView) openFileDiff(filename string) tea.Cmd {
 			deleteKey = keys[0]
 		}
 
+		nextHunkKey := "<C-n>"
+		if keys := dv.keys.DiffNextHunk.Keys(); len(keys) > 0 {
+			nextHunkKey = gerryKeyToVim(keys[0])
+		}
+		prevHunkKey := "<C-p>"
+		if keys := dv.keys.DiffPrevHunk.Keys(); len(keys) > 0 {
+			prevHunkKey = gerryKeyToVim(keys[0])
+		}
+
 		return openEditorMsg{
 			diffPath:    diffFile.Name(),
 			scriptPath:  scriptFile.Name(),
@@ -1280,6 +1289,8 @@ func (dv *DetailView) openFileDiff(filename string) tea.Cmd {
 			commentKey:  commentKey,
 			editKey:     editKey,
 			deleteKey:   deleteKey,
+			nextHunkKey: nextHunkKey,
+			prevHunkKey: prevHunkKey,
 		}
 	}
 }
@@ -1420,6 +1431,8 @@ type openEditorMsg struct {
 	commentKey  string
 	editKey     string
 	deleteKey   string
+	nextHunkKey string
+	prevHunkKey string
 }
 
 // commentEntry represents a single comment for selection
