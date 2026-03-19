@@ -463,6 +463,20 @@ var (
 				Bold(true)
 )
 
+// calcSidebarWidth returns the sidebar Width() based on the longest category name.
+// Width() in lipgloss includes padding but not border.
+// Layout: border(1) + padding(2) + "▸ "(2) + name + padding(2) + border(1)
+// Width() = padding(2) + "▸ "(2) + maxNameLen + padding(2) = maxNameLen + 6
+func (lv *ListView) calcSidebarWidth() int {
+	maxLen := 0
+	for _, cat := range lv.categories {
+		if len(cat) > maxLen {
+			maxLen = len(cat)
+		}
+	}
+	return maxLen + 6
+}
+
 // renderSidebar renders the sidebar with categories
 func (lv *ListView) renderSidebar() string {
 	var items []string
@@ -475,7 +489,7 @@ func (lv *ListView) renderSidebar() string {
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, items...)
-	sidebarWidth := 20
+	sidebarWidth := lv.calcSidebarWidth()
 	sidebarHeight := lv.height - 4
 
 	return sidebarStyle.
@@ -486,7 +500,8 @@ func (lv *ListView) renderSidebar() string {
 
 // renderMainList renders the main list of changes
 func (lv *ListView) renderMainList() string {
-	mainWidth := lv.width - 26
+	// sidebarRenderedWidth = calcSidebarWidth() + 2 (border); gap = 4
+	mainWidth := lv.width - lv.calcSidebarWidth() - 6
 	mainHeight := lv.height - 4
 
 	if lv.loading {
@@ -539,11 +554,25 @@ func (lv *ListView) renderMainList() string {
 		change := lv.changes[i]
 		changeNum := fmt.Sprintf("%v", change["_number"])
 		subject := fmt.Sprintf("%v", change["subject"])
-		if len(subject) > 50 {
-			subject = subject[:47] + "..."
-		}
-		line := fmt.Sprintf("%s: %s", changeNum, subject)
 		labels := formatLabels(change)
+
+		// Dynamically truncate subject based on available panel width.
+		// Layout per line: prefix(2) + changeNum + ": "(2) + subject + " " + labels
+		labelVisibleWidth := lipgloss.Width(labels)
+		labelSpace := 0
+		if labelVisibleWidth > 0 {
+			labelSpace = labelVisibleWidth + 1 // +1 for space separator
+		}
+		availableForSubject := innerWidth - 2 - len(changeNum) - 2 - labelSpace
+		if availableForSubject < 10 {
+			availableForSubject = 10
+		}
+		subjectRunes := []rune(subject)
+		if len(subjectRunes) > availableForSubject {
+			subject = string(subjectRunes[:availableForSubject-3]) + "..."
+		}
+
+		line := fmt.Sprintf("%s: %s", changeNum, subject)
 
 		var item string
 		if i == lv.selectedItem {
