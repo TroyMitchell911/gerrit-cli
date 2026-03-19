@@ -65,6 +65,14 @@ type DetailView struct {
 
 	// Loading state
 	loading bool
+
+	// Popup state (add reviewer / CC)
+	popupActive   bool
+	popupMode     string // "reviewer" or "cc"
+	popupQuery    string
+	popupResults  []map[string]interface{}
+	popupSelected int
+	popupMessage  string // status message after action
 }
 
 // NewDetailView creates a new DetailView
@@ -216,12 +224,110 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		dv.loading = false
 		return dv, nil
 
+	case accountSearchMsg:
+		dv.popupResults = msg.accounts
+		dv.popupSelected = 0
+		return dv, nil
+
+	case reviewerAddedMsg:
+		if msg.success {
+			label := "Reviewer"
+			if msg.mode == "cc" {
+				label = "CC"
+			}
+			dv.popupMessage = fmt.Sprintf("✓ Added %s as %s", msg.name, label)
+		} else {
+			dv.popupMessage = fmt.Sprintf("✗ Failed: %v", msg.err)
+		}
+		return dv, nil
+
 	case actionResultMsg:
 		// Handle action result (could show in status bar)
 		// For now, just continue
 		return dv, nil
 
 	case tea.KeyMsg:
+		// Dismiss popup message on any key
+		if dv.popupMessage != "" {
+			dv.popupMessage = ""
+			return dv, nil
+		}
+
+		// Popup mode: intercept all keys
+		if dv.popupActive {
+			switch msg.Type {
+			case tea.KeyEscape:
+				dv.popupActive = false
+				dv.popupQuery = ""
+				dv.popupResults = nil
+				dv.popupSelected = 0
+			case tea.KeyEnter:
+				if len(dv.popupResults) > 0 && dv.popupSelected < len(dv.popupResults) {
+					account := dv.popupResults[dv.popupSelected]
+					accountID := ""
+					if id, ok := account["_account_id"].(float64); ok {
+						accountID = fmt.Sprintf("%d", int(id))
+					} else if username, ok := account["username"].(string); ok {
+						accountID = username
+					}
+					if accountID != "" {
+						state := "REVIEWER"
+						if dv.popupMode == "cc" {
+							state = "CC"
+						}
+						dv.popupActive = false
+						name := fmt.Sprintf("%v", account["name"])
+						mode := dv.popupMode
+						dv.popupQuery = ""
+						dv.popupResults = nil
+						dv.popupSelected = 0
+						return dv, dv.addReviewerCmd(accountID, state, name, mode)
+					}
+				}
+			case tea.KeyBackspace:
+				runes := []rune(dv.popupQuery)
+				if len(runes) > 0 {
+					dv.popupQuery = string(runes[:len(runes)-1])
+					if len(dv.popupQuery) >= 2 {
+						return dv, dv.searchAccountsCmd(dv.popupQuery)
+					}
+					dv.popupResults = nil
+					dv.popupSelected = 0
+				}
+			default:
+				if msg.Type == tea.KeyRunes {
+					// alt+j/k: navigate results (use key.Matches to correctly detect)
+					if key.Matches(msg, dv.keys.FocusDown) {
+						if dv.popupSelected < len(dv.popupResults)-1 {
+							dv.popupSelected++
+						}
+						return dv, nil
+					} else if key.Matches(msg, dv.keys.FocusUp) {
+						if dv.popupSelected > 0 {
+							dv.popupSelected--
+						}
+						return dv, nil
+					}
+					// Only add non-alt runes to search query
+					if !msg.Alt {
+						dv.popupQuery += msg.String()
+						if len([]rune(dv.popupQuery)) >= 2 {
+							return dv, dv.searchAccountsCmd(dv.popupQuery)
+						}
+					}
+				} else if msg.Type == tea.KeyDown {
+					if dv.popupSelected < len(dv.popupResults)-1 {
+						dv.popupSelected++
+					}
+				} else if msg.Type == tea.KeyUp {
+					if dv.popupSelected > 0 {
+						dv.popupSelected--
+					}
+				}
+			}
+			return dv, nil
+		}
+
 		switch {
 		case key.Matches(msg, dv.keys.Back):
 			// Return to list view
@@ -320,6 +426,24 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, dv.keys.TestPlus1):
 			return dv, dv.submitReview("Verified", 1)
+
+		case key.Matches(msg, dv.keys.AddReviewer):
+			dv.popupActive = true
+			dv.popupMode = "reviewer"
+			dv.popupQuery = ""
+			dv.popupResults = nil
+			dv.popupSelected = 0
+			dv.popupMessage = ""
+			return dv, nil
+
+		case key.Matches(msg, dv.keys.AddCC):
+			dv.popupActive = true
+			dv.popupMode = "cc"
+			dv.popupQuery = ""
+			dv.popupResults = nil
+			dv.popupSelected = 0
+			dv.popupMessage = ""
+			return dv, nil
 		}
 	}
 
@@ -697,7 +821,7 @@ func (dv *DetailView) View() string {
 	// Help
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
-		Render("alt+j/k: pane↕ | alt+h/l: pane↔ | k/j: scroll | f: fetch | C: cherry-pick | alt+c/C: CR+1/+2 | alt+t: TB+1 | q: back")
+		Render("alt+j/k: pane↕ | alt+h/l: pane↔ | k/j: scroll | f: fetch | C: cherry-pick | alt+c/C: CR+1/+2 | alt+t: TB+1 | alt+r: reviewer | alt+x: CC | q: back")
 
 	// Top row: Summary and Review side by side
 	topRow := lipgloss.JoinHorizontal(
@@ -716,7 +840,7 @@ func (dv *DetailView) View() string {
 		bottomRow,
 	)
 
-	return lipgloss.JoinVertical(
+	view := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
 		"",
@@ -724,6 +848,14 @@ func (dv *DetailView) View() string {
 		"",
 		help,
 	)
+
+	// Overlay popup if active
+	if dv.popupActive || dv.popupMessage != "" {
+		popup := dv.renderPopup()
+		return lipgloss.Place(dv.width, dv.height, lipgloss.Center, lipgloss.Center, popup)
+	}
+
+	return view
 }
 
 // currentPatchset returns the current patchset number from change data
@@ -951,6 +1083,19 @@ func getProjectFromChange(change map[string]interface{}) string {
 }
 
 // actionResultMsg represents the result of an action
+// accountSearchMsg carries search results for the popup
+type accountSearchMsg struct {
+	accounts []map[string]interface{}
+}
+
+// reviewerAddedMsg carries the result of adding a reviewer/CC
+type reviewerAddedMsg struct {
+	name    string
+	mode    string
+	success bool
+	err     error
+}
+
 type actionResultMsg struct {
 	success bool
 	message string
@@ -1063,4 +1208,126 @@ func wrapLines(lines []string, maxWidth int) []string {
 		result = append(result, wrapLine(line, maxWidth)...)
 	}
 	return result
+}
+
+// renderPopup renders the reviewer/CC search popup
+func (dv *DetailView) renderPopup() string {
+	popupWidth := 46
+
+	var lines []string
+
+	if dv.popupMessage != "" {
+		// Show status message
+		lines = append(lines, dv.popupMessage)
+		lines = append(lines, "")
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("press any key to dismiss"))
+
+		style := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("170")).
+			Padding(1, 2).
+			Width(popupWidth)
+		return style.Render(strings.Join(lines, "\n"))
+	}
+
+	title := "Add Reviewer"
+	if dv.popupMode == "cc" {
+		title = "Add CC"
+	}
+	lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("170")).Render(title))
+	lines = append(lines, "")
+
+	// Search input
+	searchBar := fmt.Sprintf("> %s_", dv.popupQuery)
+	lines = append(lines, searchBar)
+
+	if len(dv.popupQuery) < 2 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("type 2+ chars to search"))
+	} else if len(dv.popupResults) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("no results"))
+	} else {
+		lines = append(lines, "")
+		for i, acc := range dv.popupResults {
+			name := fmt.Sprintf("%v", acc["name"])
+			email := ""
+			if e, ok := acc["email"].(string); ok {
+				email = fmt.Sprintf(" <%s>", e)
+			}
+			entry := fmt.Sprintf("%s%s", name, email)
+			if len(entry) > popupWidth-6 {
+				entry = entry[:popupWidth-9] + "..."
+			}
+			if i == dv.popupSelected {
+				lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Bold(true).Render("▸ "+entry))
+			} else {
+				lines = append(lines, "  "+entry)
+			}
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("↑↓/alt+j/k: select | enter: confirm | esc: cancel"))
+
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("170")).
+		Padding(1, 2).
+		Width(popupWidth)
+	return style.Render(strings.Join(lines, "\n"))
+}
+
+// placeOverlay places a popup string on top of a background string at (x, y)
+func placeOverlay(x, y int, popup, bg string) string {
+	bgLines := strings.Split(bg, "\n")
+	popupLines := strings.Split(popup, "\n")
+
+	for i, pLine := range popupLines {
+		bgIdx := y + i
+		if bgIdx < 0 || bgIdx >= len(bgLines) {
+			continue
+		}
+		bgLine := bgLines[bgIdx]
+		bgRunes := []rune(bgLine)
+
+		// Build new line: bg[:x] + popup line + bg[x+popupWidth:]
+		pRunes := []rune(pLine)
+		pWidth := len(pRunes)
+
+		var newLine []rune
+		if x <= len(bgRunes) {
+			newLine = append(newLine, bgRunes[:x]...)
+		} else {
+			newLine = append(newLine, bgRunes...)
+			for len(newLine) < x {
+				newLine = append(newLine, ' ')
+			}
+		}
+		newLine = append(newLine, pRunes...)
+		endX := x + pWidth
+		if endX < len(bgRunes) {
+			newLine = append(newLine, bgRunes[endX:]...)
+		}
+		bgLines[bgIdx] = string(newLine)
+	}
+
+	return strings.Join(bgLines, "\n")
+}
+
+// searchAccountsCmd returns a tea.Cmd that searches for accounts
+func (dv *DetailView) searchAccountsCmd(query string) tea.Cmd {
+	return func() tea.Msg {
+		accounts, err := dv.client.SearchAccounts(query)
+		if err != nil {
+			return accountSearchMsg{accounts: nil}
+		}
+		return accountSearchMsg{accounts: accounts}
+	}
+}
+
+// addReviewerCmd returns a tea.Cmd that adds a reviewer or CC
+func (dv *DetailView) addReviewerCmd(accountID, state, name, mode string) tea.Cmd {
+	return func() tea.Msg {
+		err := dv.client.AddReviewer(dv.changeID, accountID, state)
+		return reviewerAddedMsg{name: name, mode: mode, success: err == nil, err: err}
+	}
 }

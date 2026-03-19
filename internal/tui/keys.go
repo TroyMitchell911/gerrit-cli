@@ -42,6 +42,8 @@ type KeyMap struct {
 	ReviewPlus1   key.Binding
 	ReviewPlus2   key.Binding
 	TestPlus1     key.Binding
+	AddReviewer   key.Binding
+	AddCC         key.Binding
 }
 
 const (
@@ -74,6 +76,8 @@ func DefaultKeyConfig() KeyConfig {
 			"review_plus1":   {"alt+c"},
 			"review_plus2":   {"alt+C"},
 			"test_plus1":     {"alt+t"},
+			"add_reviewer":   {"alt+r"},
+			"add_cc":         {"alt+x"},
 		},
 	}
 }
@@ -215,6 +219,14 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 		TestPlus1: key.NewBinding(
 			key.WithKeys(config.Actions["test_plus1"]...),
 			key.WithHelp("alt+t", "TB+1"),
+		),
+		AddReviewer: key.NewBinding(
+			key.WithKeys(config.Actions["add_reviewer"]...),
+			key.WithHelp("alt+r", "add reviewer"),
+		),
+		AddCC: key.NewBinding(
+			key.WithKeys(config.Actions["add_cc"]...),
+			key.WithHelp("alt+x", "add CC"),
 		),
 	}
 }

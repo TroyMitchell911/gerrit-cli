@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -410,4 +411,18 @@ func (c *RESTClient) GetFileDiff(changeID, revision, filename string) (string, e
 	}
 
 	return sb.String(), nil
+}
+
+// SearchAccounts searches for Gerrit accounts by query string
+func (c *RESTClient) SearchAccounts(query string) ([]map[string]interface{}, error) {
+	path := fmt.Sprintf("accounts/?suggest&q=%s&n=10", url.QueryEscape(query))
+	resp, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+	var accounts []map[string]interface{}
+	if err := json.Unmarshal(resp, &accounts); err != nil {
+		return nil, fmt.Errorf("failed to parse accounts: %w", err)
+	}
+	return accounts, nil
 }
