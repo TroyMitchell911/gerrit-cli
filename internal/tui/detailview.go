@@ -93,6 +93,10 @@ type DetailView struct {
 	popupConfirmAction string                   // action to confirm (e.g., "abandon")
 	popupConfirmData   map[string]interface{}   // data for confirm action
 	chainChanges       []map[string]interface{} // for chain view
+
+	// Help bar pagination
+	helpPageIndex int
+	helpPageCount int
 }
 
 // NewDetailView creates a new DetailView
@@ -524,6 +528,12 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Return to list view
 			return dv, func() tea.Msg {
 				return switchToListMsg{}
+			}
+
+		case key.Matches(msg, dv.keys.HelpNextPage):
+			// Next help page
+			if dv.helpPageCount > 1 {
+				dv.helpPageIndex = (dv.helpPageIndex + 1) % dv.helpPageCount
 			}
 
 		// Focus switching
@@ -1137,23 +1147,8 @@ func (dv *DetailView) View() string {
 		Foreground(lipgloss.Color("170")).
 		Render(fmt.Sprintf("Change Details - %s", dv.changeID))
 
-	// Help - dynamically built from key bindings
-	help := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Render(fmt.Sprintf(
-			"%s/%s: pane↕ | %s/%s: pane↔ | k/j: scroll | %s: fetch | %s: cherry-pick | %s/%s: CR+1/+2 | %s: TB+1 | %s: reviewer | %s: CC | %s: chain | %s: abandon | %s: back",
-			keyStr(dv.keys.FocusDown, "alt+j"), keyStr(dv.keys.FocusUp, "alt+k"),
-			keyStr(dv.keys.FocusLeft, "alt+h"), keyStr(dv.keys.FocusRight, "alt+l"),
-			keyStr(dv.keys.Fetch, "f"),
-			keyStr(dv.keys.CherryPick, "C"),
-			keyStr(dv.keys.ReviewPlus1, "alt+c"), keyStr(dv.keys.ReviewPlus2, "alt+C"),
-			keyStr(dv.keys.TestPlus1, "alt+t"),
-			keyStr(dv.keys.AddReviewer, "alt+r"),
-			keyStr(dv.keys.AddCC, "alt+x"),
-			keyStr(dv.keys.ViewChain, "tab"),
-			keyStr(dv.keys.Abandon, "alt+b"),
-			keyStr(dv.keys.Back, "q"),
-		))
+	// Help - paginated based on available width
+	help := dv.renderHelpBar()
 
 	// Top row: Summary and Review side by side
 	topRow := lipgloss.JoinHorizontal(
@@ -1188,6 +1183,26 @@ func (dv *DetailView) View() string {
 	}
 
 	return view
+}
+
+// renderHelpBar renders the paginated help bar for DetailView
+func (dv *DetailView) renderHelpBar() string {
+	items := []helpItem{
+		{keyStr(dv.keys.FocusDown, "alt+j") + "/" + keyStr(dv.keys.FocusUp, "alt+k"), "pane↕"},
+		{keyStr(dv.keys.FocusLeft, "alt+h") + "/" + keyStr(dv.keys.FocusRight, "alt+l"), "pane↔"},
+		{"k/j", "scroll"},
+		{keyStr(dv.keys.Fetch, "f"), "fetch"},
+		{keyStr(dv.keys.CherryPick, "C"), "cherry-pick"},
+		{keyStr(dv.keys.ReviewPlus1, "alt+c") + "/" + keyStr(dv.keys.ReviewPlus2, "alt+C"), "CR+1/+2"},
+		{keyStr(dv.keys.TestPlus1, "alt+t"), "TB+1"},
+		{keyStr(dv.keys.AddReviewer, "alt+r"), "reviewer"},
+		{keyStr(dv.keys.AddCC, "alt+x"), "CC"},
+		{keyStr(dv.keys.ViewChain, "tab"), "chain"},
+		{keyStr(dv.keys.Abandon, "alt+b"), "abandon"},
+		{keyStr(dv.keys.Back, "q"), "back"},
+	}
+
+	return renderPaginatedHelp(items, dv.width, &dv.helpPageIndex, &dv.helpPageCount, dv.keys)
 }
 
 // currentPatchset returns the current patchset number from change data

@@ -21,8 +21,9 @@ type KeyConfig struct {
 // KeyMap contains all key bindings for the TUI
 type KeyMap struct {
 	// Global
-	Quit key.Binding
-	Help key.Binding
+	Quit         key.Binding
+	Help         key.Binding
+	HelpNextPage key.Binding
 
 	// Navigation
 	Up     key.Binding
@@ -73,8 +74,9 @@ func keyStr(b key.Binding, fallback string) string {
 func DefaultKeyConfig() KeyConfig {
 	return KeyConfig{
 		Global: map[string][]string{
-			"quit": {"q", "ctrl+c"},
-			"help": {"?"},
+			"quit":           {"q", "ctrl+c"},
+			"help":           {"?"},
+			"help_next_page": {"ctrl+o"},
 		},
 		Navigation: map[string][]string{
 			"up":     {"k", "up"},
@@ -101,12 +103,12 @@ func DefaultKeyConfig() KeyConfig {
 			"add_cc":         {"alt+x"},
 			"search":         {"/"},
 			"clear_search":   {"esc"},
-			"abandon":         {"alt+b"},
-			"view_chain":      {"tab"},
-			"delete":          {"x"},
-			"view_file":       {"v"},
-			"diff_next_hunk":  {"ctrl+n"},
-			"diff_prev_hunk":  {"ctrl+p"},
+			"abandon":        {"alt+b"},
+			"view_chain":     {"tab"},
+			"delete":         {"x"},
+			"view_file":      {"v"},
+			"diff_next_hunk": {"ctrl+n"},
+			"diff_prev_hunk": {"ctrl+p"},
 		},
 	}
 }
@@ -201,6 +203,10 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 		Help: key.NewBinding(
 			key.WithKeys(config.Global["help"]...),
 			key.WithHelp("?", "help"),
+		),
+		HelpNextPage: key.NewBinding(
+			key.WithKeys(config.Global["help_next_page"]...),
+			key.WithHelp("ctrl+o", "next help page"),
 		),
 
 		// Navigation

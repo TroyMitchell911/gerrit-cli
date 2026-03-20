@@ -45,6 +45,10 @@ type ListView struct {
 	searching   bool   // true when / search bar is active
 	searchQuery string // current query; non-empty means filter is active
 
+	// Help bar pagination
+	helpPageIndex int
+	helpPageCount int
+
 	// Layout
 	width  int
 	height int
@@ -436,6 +440,12 @@ func (lv *ListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				lv.changes = lv.pageChanges(lv.currentPage)
 				lv.selectedItem = 0
 			}
+
+		case key.Matches(msg, lv.keys.HelpNextPage):
+			// Next help page
+			if lv.helpPageCount > 1 {
+				lv.helpPageIndex = (lv.helpPageIndex + 1) % lv.helpPageCount
+			}
 		}
 	}
 
@@ -609,16 +619,8 @@ func (lv *ListView) View() string {
 		Foreground(lipgloss.Color("170")).
 		Render("Gerry TUI - Change List")
 
-	// Help - dynamically built from key bindings
-	help := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Render(fmt.Sprintf(
-			"%s/%s: category | k/j: navigate | %s/%s: page | %s: search | enter: select | %s: quit",
-			keyStr(lv.keys.FocusUp, "alt+k"), keyStr(lv.keys.FocusDown, "alt+j"),
-			keyStr(lv.keys.FocusLeft, "alt+h"), keyStr(lv.keys.FocusRight, "alt+l"),
-			keyStr(lv.keys.Search, "/"),
-			keyStr(lv.keys.Quit, "q"),
-		))
+	// Help - paginated based on available width
+	help := lv.renderHelpBar()
 
 	// Combine sidebar and main list
 	sidebar := lv.renderSidebar()
@@ -635,4 +637,116 @@ func (lv *ListView) View() string {
 		"",
 		help,
 	)
+}
+
+// helpItem represents a single help item with its key and description
+type helpItem struct {
+	key  string
+	desc string
+}
+
+// renderHelpBar renders the paginated help bar
+func (lv *ListView) renderHelpBar() string {
+	items := []helpItem{
+		{keyStr(lv.keys.FocusUp, "alt+k") + "/" + keyStr(lv.keys.FocusDown, "alt+j"), "category"},
+		{"k/j", "navigate"},
+		{keyStr(lv.keys.FocusLeft, "alt+h") + "/" + keyStr(lv.keys.FocusRight, "alt+l"), "page"},
+		{keyStr(lv.keys.Search, "/"), "search"},
+		{"enter", "select"},
+		{keyStr(lv.keys.Quit, "q"), "quit"},
+	}
+
+	return renderPaginatedHelp(items, lv.width, &lv.helpPageIndex, &lv.helpPageCount, lv.keys)
+}
+
+// renderPaginatedHelp is a shared function to render paginated help
+func renderPaginatedHelp(items []helpItem, width int, pageIndex *int, pageCount *int, keys KeyMap) string {
+	// Build help segments: "key: desc" pairs
+	var segments []string
+	for _, item := range items {
+		segments = append(segments, fmt.Sprintf("%s: %s", item.key, item.desc))
+	}
+
+	// Calculate total width needed
+	separator := " | "
+	segWidths := make([]int, len(segments))
+	totalWidth := 0
+	for i, seg := range segments {
+		segWidths[i] = stringWidth(seg)
+		totalWidth += segWidths[i]
+		if i < len(segments)-1 {
+			totalWidth += len(separator)
+		}
+	}
+
+	// Reserve space for page indicator
+	pageIndicatorSpace := 0
+	if totalWidth > width {
+		pageIndicatorSpace = 20 // " [ctrl+o: more]" space
+	}
+	availableWidth := width - pageIndicatorSpace
+
+	// If all fits, render all
+	if totalWidth <= availableWidth {
+		*pageCount = 1
+		*pageIndex = 0
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Join(segments, separator))
+	}
+
+	// Need pagination - split into pages
+	var pages [][]string
+	var currentPage []string
+	currentWidth := 0
+
+	// Always include ctrl+o on last page if paginated
+	ctrlOKey := keyStr(keys.HelpNextPage, "ctrl+o")
+
+	for i, seg := range segments {
+		segW := segWidths[i]
+		sepW := len(separator)
+		if currentPage == nil {
+			// First item on page
+			if currentWidth+segW > availableWidth {
+				// This segment alone exceeds width, start new page
+				if len(currentPage) > 0 {
+					pages = append(pages, currentPage)
+				}
+				currentPage = []string{seg}
+				currentWidth = segW
+			} else {
+				currentPage = []string{seg}
+				currentWidth = segW
+			}
+		} else {
+			// Adding to existing page
+			if currentWidth+sepW+segW <= availableWidth {
+				currentPage = append(currentPage, seg)
+				currentWidth += sepW + segW
+			} else {
+				// Start new page
+				pages = append(pages, currentPage)
+				currentPage = []string{seg}
+				currentWidth = segW
+			}
+		}
+	}
+	if len(currentPage) > 0 {
+		pages = append(pages, currentPage)
+	}
+
+	*pageCount = len(pages)
+	if *pageIndex >= *pageCount {
+		*pageIndex = 0
+	}
+
+	// Render current page
+	page := pages[*pageIndex]
+	helpText := strings.Join(page, separator)
+
+	// Add page indicator if multiple pages
+	if *pageCount > 1 {
+		helpText += fmt.Sprintf(" [%s: more %d/%d]", ctrlOKey, *pageIndex+1, *pageCount)
+	}
+
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(helpText)
 }
