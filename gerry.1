@@ -30,6 +30,8 @@ The TUI provides three views:
 .B List View
 Sidebar with My List / Team / All Open and user-configured projects.
 Dynamic pagination based on window height with page indicator (e.g. 1/4).
+Search functionality: press `/` to filter changes.
+Help bar pagination: if help extends beyond terminal width, use `ctrl+o` to cycle pages.
 .RS
 .TP
 .B alt+k/j
@@ -41,6 +43,9 @@ Navigate changes
 .B alt+h/l
 Previous/next page
 .TP
+.B /
+Search changes
+.TP
 .B enter
 Open change detail
 .TP
@@ -50,6 +55,8 @@ Quit
 .TP
 .B Detail View
 Three-pane layout: Summary (top-left), Comments (top-right), Files Changed (bottom).
+Comments are displayed in threaded format like email threads (`>` indicates reply depth).
+Help bar pagination: use `ctrl+o` to see additional keybindings.
 .RS
 .TP
 .B alt+j/k
@@ -76,6 +83,24 @@ Submit Code-Review +1 / +2
 .B alt+t
 Submit Verified +1
 .TP
+.B alt+r
+Add reviewer
+.TP
+.B alt+x
+Add CC
+.TP
+.B tab
+View change chain
+.TP
+.B alt+b
+Abandon change
+.TP
+.B v
+View file with comment
+.TP
+.B x
+Delete selected item (reviewer/CC/vote)
+.TP
 .B q
 Return to list view
 .RE
@@ -91,6 +116,9 @@ Edit comment near current line
 .TP
 .B gd
 Delete comment near current line (with confirmation)
+.TP
+.B ctrl+o
+Next help page (when help bar exceeds terminal width)
 .TP
 .B :q
 Exit editor — comments are auto-submitted to Gerrit as published inline comments

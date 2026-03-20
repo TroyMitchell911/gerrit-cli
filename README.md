@@ -312,15 +312,18 @@ A full-featured TUI with three views:
 **List View**
 - Sidebar: My List / Team / All Open + user-configured projects
 - Dynamic pagination based on window height; page indicator shown as `1/4`
-- `alt+k/j`: switch category | `k/j`: navigate | `alt+h/l`: prev/next page | `enter`: open change | `q`: quit
+- Search: press `/` to filter changes by subject or change number
+- Keybindings: `alt+k/j`: switch category | `k/j`: navigate | `alt+h/l`: prev/next page | `/`: search | `enter`: open change | `q`: quit
+- Help bar pagination: if help bar exceeds terminal width, use `ctrl+o` to see more keybindings
 
 **Detail View** (three-pane layout)
-- Summary (top-left): change metadata, owner, status, labels
-- Comments (top-right): inline comments with `j/k` selection, `enter` to reply
+- Summary (top-left): change metadata, owner, status, labels, reviewers, CCs
+- Comments (top-right): threaded inline comments like email threads (`>` indicates reply depth)
 - Files Changed (bottom): file list with `j/k` selection, `enter` to open diff in nvim/vim
 - `alt+j/k`: switch between top and bottom panes
 - `alt+h/l`: switch between Summary and Comments
-- `f`: fetch | `C`: cherry-pick | `alt+c/C`: Code-Review +1/+2 | `alt+t`: Verified +1 | `q`: back
+- `f`: fetch | `C`: cherry-pick | `alt+c/C`: Code-Review +1/+2 | `alt+t`: Verified +1 | `alt+r`: add reviewer | `alt+x`: add CC | `tab`: view chain | `alt+b`: abandon | `v`: view file with comment | `x`: delete selected (reviewer/CC/vote) | `q`: back
+- Help bar pagination: if help bar exceeds terminal width, use `ctrl+o` to see more keybindings
 
 **Inline Comment Workflow** (in nvim/vim)
 - `gc`: add comment at current line
