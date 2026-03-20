@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -18,6 +19,9 @@ import (
 
 //go:embed gerrit-comment.vim
 var gerritCommentVim string
+
+//go:embed gerrit-view-comment.vim
+var gerritViewCommentVim string
 
 // Pane represents different panes in DetailView
 type Pane int
@@ -191,12 +195,17 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if inReplyTo == "<nil>" {
 							inReplyTo = ""
 						}
+						line := 0
+						if lineNum, ok := c["line"].(float64); ok {
+							line = int(lineNum)
+						}
 						dv.commentList = append(dv.commentList, commentEntry{
 							filename:  filename,
 							author:    author,
 							message:   fmt.Sprintf("%v", c["message"]),
 							id:        id,
 							inReplyTo: inReplyTo,
+							line:      line,
 						})
 					}
 				}
@@ -228,6 +237,23 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			os.Remove(msg.diffPath)
 			os.Remove(msg.scriptPath)
 			return editorFinishedMsg{err: err, commentFile: commentFile}
+		})
+
+	case openFileViewMsg:
+		editor := "nvim"
+		if _, err := exec.LookPath("nvim"); err != nil {
+			editor = "vim"
+		}
+		initCmd := fmt.Sprintf(
+			"let g:gerrit_view_comment_file='%s' | let g:gerrit_view_target_line=%d | source %s",
+			msg.commentDataFile, msg.targetLine, msg.scriptPath,
+		)
+		cmd := exec.Command(editor, "-R", "-c", initCmd, msg.filePath)
+		return dv, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			os.Remove(msg.filePath)
+			os.Remove(msg.scriptPath)
+			os.Remove(msg.commentDataFile)
+			return editorFinishedMsg{err: err}
 		})
 
 	case editorFinishedMsg:
@@ -616,6 +642,11 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, dv.keys.Abandon):
 			return dv, dv.abandonChange()
+
+		case key.Matches(msg, dv.keys.ViewFile):
+			if dv.activePane == PaneReview && len(dv.commentList) > 0 {
+				return dv, dv.openFileWithComment(dv.commentList[dv.selectedComment])
+			}
 
 		case key.Matches(msg, dv.keys.Delete):
 			// Delete selected item in Summary pane
@@ -1295,6 +1326,88 @@ func (dv *DetailView) openFileDiff(filename string) tea.Cmd {
 	}
 }
 
+// openFileWithComment fetches file content and opens it in editor with comments displayed
+func (dv *DetailView) openFileWithComment(c commentEntry) tea.Cmd {
+	return func() tea.Msg {
+		// Fetch file content
+		content, err := dv.client.GetFileContent(dv.changeID, "current", c.filename)
+		if err != nil {
+			return errMsg{err}
+		}
+
+		// Write file content to temp file (preserve extension for syntax highlighting)
+		ext := filepath.Ext(c.filename)
+		if ext == "" {
+			ext = ".txt"
+		}
+		contentFile, err := os.CreateTemp("", "gerrit-view-*"+ext)
+		if err != nil {
+			return errMsg{err}
+		}
+		contentFile.WriteString(content)
+		contentFile.Close()
+
+		// Write vim plugin to temp file
+		scriptFile, err := os.CreateTemp("", "gerrit-view-comment-*.vim")
+		if err != nil {
+			os.Remove(contentFile.Name())
+			return errMsg{err}
+		}
+		scriptFile.WriteString(gerritViewCommentVim)
+		scriptFile.Close()
+
+		// Collect all comments for this file
+		var fileComments []map[string]interface{}
+		if commentData, ok := dv.comments[c.filename]; ok {
+			if commentList, ok := commentData.([]interface{}); ok {
+				for _, comment := range commentList {
+					if cm, ok := comment.(map[string]interface{}); ok {
+						author := "Unknown"
+						if authorData, ok := cm["author"].(map[string]interface{}); ok {
+							if name, ok := authorData["name"].(string); ok {
+								author = name
+							}
+						}
+						line := 0
+						if lineNum, ok := cm["line"].(float64); ok {
+							line = int(lineNum)
+						}
+						message := fmt.Sprintf("%v", cm["message"])
+						fileComments = append(fileComments, map[string]interface{}{
+							"line":    line,
+							"author":  author,
+							"message": message,
+						})
+					}
+				}
+			}
+		}
+
+		// Write comments to JSON temp file
+		commentJSON, err := json.Marshal(fileComments)
+		if err != nil {
+			os.Remove(contentFile.Name())
+			os.Remove(scriptFile.Name())
+			return errMsg{err}
+		}
+		commentDataFile, err := os.CreateTemp("", "gerrit-view-comments-*.json")
+		if err != nil {
+			os.Remove(contentFile.Name())
+			os.Remove(scriptFile.Name())
+			return errMsg{err}
+		}
+		commentDataFile.Write(commentJSON)
+		commentDataFile.Close()
+
+		return openFileViewMsg{
+			filePath:        contentFile.Name(),
+			scriptPath:      scriptFile.Name(),
+			commentDataFile: commentDataFile.Name(),
+			targetLine:      c.line,
+		}
+	}
+}
+
 // submitDraftComments reads the comment JSON file and submits each as a Gerrit draft
 func (dv *DetailView) submitDraftComments(commentFile string) tea.Cmd {
 	return func() tea.Msg {
@@ -1442,6 +1555,7 @@ type commentEntry struct {
 	message   string
 	id        string
 	inReplyTo string
+	line      int
 }
 
 // openReplyEditorMsg triggers opening an editor for replying to a comment
@@ -1464,6 +1578,14 @@ type replyEditorFinishedMsg struct {
 type editorFinishedMsg struct {
 	err         error
 	commentFile string
+}
+
+// openFileViewMsg triggers opening a file in editor with comments displayed
+type openFileViewMsg struct {
+	filePath        string
+	scriptPath      string
+	commentDataFile string
+	targetLine      int
 }
 
 // relatedChangesMsg carries related changes for the chain view

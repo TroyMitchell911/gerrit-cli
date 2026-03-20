@@ -52,6 +52,7 @@ type KeyMap struct {
 	Abandon       key.Binding
 	ViewChain     key.Binding
 	Delete        key.Binding // delete selected item (vote/reviewer/cc)
+	ViewFile      key.Binding // view file with comment in editor
 
 	// Diff navigation (used inside vim/nvim via plugin)
 	DiffNextHunk key.Binding
@@ -103,6 +104,7 @@ func DefaultKeyConfig() KeyConfig {
 			"abandon":         {"alt+b"},
 			"view_chain":      {"tab"},
 			"delete":          {"x"},
+			"view_file":       {"v"},
 			"diff_next_hunk":  {"ctrl+n"},
 			"diff_prev_hunk":  {"ctrl+p"},
 		},
@@ -297,6 +299,10 @@ func NewKeyMap(config *KeyConfig) KeyMap {
 		Delete: key.NewBinding(
 			key.WithKeys(config.Actions["delete"]...),
 			key.WithHelp("x", "delete selected"),
+		),
+		ViewFile: key.NewBinding(
+			key.WithKeys(config.Actions["view_file"]...),
+			key.WithHelp("v", "view file"),
 		),
 		DiffNextHunk: key.NewBinding(
 			key.WithKeys(config.Actions["diff_next_hunk"]...),

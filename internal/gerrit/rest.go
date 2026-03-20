@@ -434,6 +434,25 @@ func (c *RESTClient) GetFileDiff(changeID, revision, filename string) (string, e
 	return sb.String(), nil
 }
 
+// GetFileContent returns the content of a file from a specific revision
+func (c *RESTClient) GetFileContent(changeID, revision, filename string) (string, error) {
+	encodedFile := strings.ReplaceAll(filename, "/", "%2F")
+	path := fmt.Sprintf("changes/%s/revisions/%s/files/%s/content", changeID, revision, encodedFile)
+
+	resp, err := c.Get(path)
+	if err != nil {
+		return "", err
+	}
+
+	// Response is base64-encoded
+	cleaned := strings.TrimSpace(strings.ReplaceAll(string(resp), "\n", ""))
+	decoded, err := base64.StdEncoding.DecodeString(cleaned)
+	if err != nil {
+		return string(resp), nil
+	}
+	return string(decoded), nil
+}
+
 // SearchAccounts searches for Gerrit accounts by query string
 func (c *RESTClient) SearchAccounts(query string) ([]map[string]interface{}, error) {
 	path := fmt.Sprintf("accounts/?suggest&q=%s&n=10", url.QueryEscape(query))
