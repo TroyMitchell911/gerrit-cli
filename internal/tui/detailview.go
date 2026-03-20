@@ -176,45 +176,8 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		sort.Strings(dv.fileList)
 		dv.selectedFile = 0
-		// Build flat comment list (sorted by filename)
-		dv.commentList = nil
-		var commentFilenames []string
-		for filename := range dv.comments {
-			commentFilenames = append(commentFilenames, filename)
-		}
-		sort.Strings(commentFilenames)
-		for _, filename := range commentFilenames {
-			fileComments := dv.comments[filename]
-			if commentList, ok := fileComments.([]interface{}); ok {
-				for _, comment := range commentList {
-					if c, ok := comment.(map[string]interface{}); ok {
-						author := "Unknown"
-						if authorData, ok := c["author"].(map[string]interface{}); ok {
-							if name, ok := authorData["name"].(string); ok {
-								author = name
-							}
-						}
-						id := fmt.Sprintf("%v", c["id"])
-						inReplyTo := fmt.Sprintf("%v", c["in_reply_to"])
-						if inReplyTo == "<nil>" {
-							inReplyTo = ""
-						}
-						line := 0
-						if lineNum, ok := c["line"].(float64); ok {
-							line = int(lineNum)
-						}
-						dv.commentList = append(dv.commentList, commentEntry{
-							filename:  filename,
-							author:    author,
-							message:   fmt.Sprintf("%v", c["message"]),
-							id:        id,
-							inReplyTo: inReplyTo,
-							line:      line,
-						})
-					}
-				}
-			}
-		}
+		// Build threaded comment list
+		dv.commentList = dv.buildThreadedComments()
 		dv.selectedComment = 0
 		return dv, nil
 
@@ -1037,7 +1000,6 @@ func (dv *DetailView) renderReviewPane() string {
 	}
 
 	var lines []string
-	// Track raw line range [start, end) for each comment
 	type commentRange struct{ start, end int }
 	var commentRanges []commentRange
 
@@ -1047,20 +1009,45 @@ func (dv *DetailView) renderReviewPane() string {
 	if len(dv.commentList) == 0 {
 		lines = append(lines, "No comments yet")
 	} else {
+		currentFile := ""
 		for i, c := range dv.commentList {
 			rawStart := len(lines)
+
+			// Add file header when file changes
+			if c.filename != currentFile {
+				if currentFile != "" {
+					lines = append(lines, "")
+				}
+				lines = append(lines, lipgloss.NewStyle().Bold(true).Render(c.filename))
+				currentFile = c.filename
+			}
 
 			prefix := "  "
 			if dv.activePane == PaneReview && i == dv.selectedComment {
 				prefix = "▸ "
 			}
-			header := fmt.Sprintf("%s[%s] %s:", prefix, c.filename, c.author)
+
+			// Build thread indentation using > symbols
+			indent := ""
+			for d := 0; d < c.depth; d++ {
+				indent += ">"
+			}
+			if c.depth > 0 {
+				indent += " "
+			}
+
+			// Show author with thread indentation
+			header := fmt.Sprintf("%s%s[%s] %s:", prefix, indent, c.author, c.line)
+			if c.depth > 0 {
+				// For replies, show simpler format: >author
+				header = fmt.Sprintf("%s%s%s:", prefix, indent, c.author)
+			}
+
 			lines = append(lines, header)
 			msgLines := strings.Split(strings.ReplaceAll(c.message, "\r\n", "\n"), "\n")
 			for _, msgLine := range msgLines {
-				lines = append(lines, fmt.Sprintf("    %s", msgLine))
+				lines = append(lines, fmt.Sprintf("%s  %s%s", prefix, indent, msgLine))
 			}
-			lines = append(lines, "")
 
 			commentRanges = append(commentRanges, commentRange{rawStart, len(lines)})
 		}
@@ -1571,6 +1558,122 @@ type commentEntry struct {
 	id        string
 	inReplyTo string
 	line      int
+	depth     int // nesting depth for thread display
+}
+
+// commentThread represents a thread of comments
+type commentThread struct {
+	comment  commentEntry
+	replies  []*commentThread
+	filename string
+}
+
+// buildThreadedComments builds a threaded view of comments organized by file and thread
+func (dv *DetailView) buildThreadedComments() []commentEntry {
+	// Collect all comments by filename
+	commentsByFile := make(map[string][]commentEntry)
+	var commentFilenames []string
+	for filename := range dv.comments {
+		commentFilenames = append(commentFilenames, filename)
+	}
+	sort.Strings(commentFilenames)
+
+	for _, filename := range commentFilenames {
+		fileComments := dv.comments[filename]
+		if commentList, ok := fileComments.([]interface{}); ok {
+			for _, comment := range commentList {
+				if c, ok := comment.(map[string]interface{}); ok {
+					author := "Unknown"
+					if authorData, ok := c["author"].(map[string]interface{}); ok {
+						if name, ok := authorData["name"].(string); ok {
+							author = name
+						}
+					}
+					id := fmt.Sprintf("%v", c["id"])
+					inReplyTo := fmt.Sprintf("%v", c["in_reply_to"])
+					if inReplyTo == "<nil>" {
+						inReplyTo = ""
+					}
+					line := 0
+					if lineNum, ok := c["line"].(float64); ok {
+						line = int(lineNum)
+					}
+					entry := commentEntry{
+						filename:  filename,
+						author:    author,
+						message:   fmt.Sprintf("%v", c["message"]),
+						id:        id,
+						inReplyTo: inReplyTo,
+						line:      line,
+						depth:     0,
+					}
+					commentsByFile[filename] = append(commentsByFile[filename], entry)
+				}
+			}
+		}
+	}
+
+	// Build threaded result
+	var result []commentEntry
+
+	for _, filename := range commentFilenames {
+		fileComments := commentsByFile[filename]
+
+		// Build thread nodes map
+		threadNodes := make(map[string]*commentThread)
+		for i := range fileComments {
+			threadNodes[fileComments[i].id] = &commentThread{
+				comment:  fileComments[i],
+				replies:  nil,
+				filename: filename,
+			}
+		}
+
+		// Find root comments (not a reply to any existing comment)
+		var roots []*commentThread
+		isReply := make(map[string]bool)
+		for i := range fileComments {
+			c := &fileComments[i]
+			if c.inReplyTo != "" && threadNodes[c.inReplyTo] != nil {
+				isReply[c.id] = true
+				parent := threadNodes[c.inReplyTo]
+				parent.replies = append(parent.replies, threadNodes[c.id])
+			}
+		}
+		// Roots are comments that are not replies
+		for i := range fileComments {
+			c := &fileComments[i]
+			if !isReply[c.id] {
+				roots = append(roots, threadNodes[c.id])
+			}
+		}
+
+		// Sort roots by line number
+		sort.Slice(roots, func(i, j int) bool {
+			return roots[i].comment.line < roots[j].comment.line
+		})
+
+		// Flatten threads with depth
+		var flatten func(thread *commentThread, depth int)
+		flatten = func(thread *commentThread, depth int) {
+			entry := thread.comment
+			entry.depth = depth
+			result = append(result, entry)
+			// Sort replies by line number
+			sort.Slice(thread.replies, func(i, j int) bool {
+				return thread.replies[i].comment.line < thread.replies[j].comment.line
+			})
+			for _, reply := range thread.replies {
+				flatten(reply, depth+1)
+			}
+		}
+
+		for _, root := range roots {
+			flatten(root, 0)
+		}
+	}
+
+	return result
 }
 
 // openReplyEditorMsg triggers opening an editor for replying to a comment
