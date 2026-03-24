@@ -2097,8 +2097,18 @@ func (dv *DetailView) renderChainPopup() string {
 		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("No related changes found"))
 	} else {
 		for i, ch := range dv.chainChanges {
-			changeNum := fmt.Sprintf("%v", ch["_change_number"])
-			subject := fmt.Sprintf("%v", ch["subject"])
+			changeNum := ""
+			if num, ok := ch["_change_number"].(float64); ok {
+				changeNum = fmt.Sprintf("%d", int(num))
+			}
+			subject := ""
+			if s, ok := ch["subject"].(string); ok {
+				subject = s
+			} else if commit, ok := ch["commit"].(map[string]interface{}); ok {
+				if s, ok := commit["subject"].(string); ok {
+					subject = s
+				}
+			}
 			project := ""
 			if p, ok := ch["project"].(string); ok {
 				project = fmt.Sprintf(" [%s]", p)

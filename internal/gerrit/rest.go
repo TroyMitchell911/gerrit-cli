@@ -480,7 +480,7 @@ func (c *RESTClient) AbandonChange(changeID string, message string) error {
 
 // GetRelatedChanges gets the related changes (chain) for a change
 func (c *RESTClient) GetRelatedChanges(changeID string) ([]map[string]interface{}, error) {
-	path := fmt.Sprintf("changes/%s/revisions/current/related", changeID)
+	path := fmt.Sprintf("changes/%s/revisions/current/related?o=CURRENT_COMMIT", changeID)
 	resp, err := c.Get(path)
 	if err != nil {
 		return nil, err
