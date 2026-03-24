@@ -1031,8 +1031,8 @@ func (dv *DetailView) renderReviewPane() string {
 
 			// Add thread separator between different threads in same file
 			if c.depth == 0 && currentThreadRoot != "" {
-				// Thread separator line
-				sepLine := strings.Repeat("-", dv.width/2-4)
+				// Thread separator line - match wrapWidth
+				sepLine := strings.Repeat("-", dv.width/2-10)
 				lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(sepLine))
 			}
 			if c.depth == 0 {
