@@ -1062,6 +1062,9 @@ func (dv *DetailView) renderReviewPane() string {
 			msgLines := strings.Split(strings.ReplaceAll(c.message, "\r\n", "\n"), "\n")
 			// First line has arrow if selected, continuation lines use spaces for alignment
 			contPrefix := "  " // continuation always uses spaces, no arrow
+			// Calculate display width for alignment (CJK support)
+			authorWidth := stringWidth(c.author)
+			indentWidth := stringWidth(indent)
 			if c.depth == 0 {
 				// Root comment: [author]: message
 				if len(msgLines) > 0 {
@@ -1070,7 +1073,8 @@ func (dv *DetailView) renderReviewPane() string {
 					lines = append(lines, fmt.Sprintf("%s%s[%s]:", linePrefix, indent, c.author))
 				}
 				// Continuation lines: align with the message start (after author)
-				contIndent := contPrefix + strings.Repeat(" ", len(indent)) + strings.Repeat(" ", len(c.author)+4) // +4 for "[]: "
+				// Format: "  " + indent + "[author]: "
+				contIndent := contPrefix + strings.Repeat(" ", indentWidth+authorWidth+4) // +4 for "[]: "
 				for _, msgLine := range msgLines[1:] {
 					lines = append(lines, contIndent+msgLine)
 				}
@@ -1082,8 +1086,8 @@ func (dv *DetailView) renderReviewPane() string {
 					lines = append(lines, fmt.Sprintf("%s%s%s:", linePrefix, indent, c.author))
 				}
 				// Continuation lines: align with the message start
-				// indentLen: len(indent) + len(author) + 2 (for ": ")
-				contIndent := contPrefix + strings.Repeat(" ", len(indent)) + strings.Repeat(" ", len(c.author)+2)
+				// Format: "  " + indent + "author: "
+				contIndent := contPrefix + strings.Repeat(" ", indentWidth+authorWidth+2) // +2 for ": "
 				for _, msgLine := range msgLines[1:] {
 					lines = append(lines, contIndent+msgLine)
 				}
