@@ -1060,11 +1060,11 @@ func (dv *DetailView) renderReviewPane() string {
 
 			// Show author with thread indentation, followed by message on same line
 			msgLines := strings.Split(strings.ReplaceAll(c.message, "\r\n", "\n"), "\n")
-			// First line has arrow if selected, continuation lines use spaces for alignment
-			contPrefix := "  " // continuation always uses spaces, no arrow
 			// Calculate display width for alignment (CJK support)
 			authorWidth := stringWidth(c.author)
 			indentWidth := stringWidth(indent)
+			// First line prefix: arrow (2 chars) or spaces (2 chars)
+			linePrefixDisplayWidth := stringWidth(linePrefix) // "▸ " or "  "
 			if c.depth == 0 {
 				// Root comment: [author]: message
 				if len(msgLines) > 0 {
@@ -1072,22 +1072,24 @@ func (dv *DetailView) renderReviewPane() string {
 				} else {
 					lines = append(lines, fmt.Sprintf("%s%s[%s]:", linePrefix, indent, c.author))
 				}
-				// Continuation lines: align with the message start (after author)
-				// Format: "  " + indent + "[author]: "
-				contIndent := contPrefix + strings.Repeat(" ", indentWidth+authorWidth+4) // +4 for "[]: "
+				// Continuation lines: align with the message start (after "[author]: ")
+				// Total prefix width = linePrefix (2) + indent (0) + "[author]: " (authorWidth + 4)
+				contIndentWidth := linePrefixDisplayWidth + indentWidth + authorWidth + 4 // +4 for "[]: "
+				contIndent := strings.Repeat(" ", contIndentWidth)
 				for _, msgLine := range msgLines[1:] {
 					lines = append(lines, contIndent+msgLine)
 				}
 			} else {
-				// Reply: >author: message
+				// Reply: >author: message (or author: message for latest reply)
 				if len(msgLines) > 0 {
 					lines = append(lines, fmt.Sprintf("%s%s%s: %s", linePrefix, indent, c.author, msgLines[0]))
 				} else {
 					lines = append(lines, fmt.Sprintf("%s%s%s:", linePrefix, indent, c.author))
 				}
 				// Continuation lines: align with the message start
-				// Format: "  " + indent + "author: "
-				contIndent := contPrefix + strings.Repeat(" ", indentWidth+authorWidth+2) // +2 for ": "
+				// Total prefix width = linePrefix (2) + indent (indentWidth) + "author: " (authorWidth + 2)
+				contIndentWidth := linePrefixDisplayWidth + indentWidth + authorWidth + 2 // +2 for ": "
+				contIndent := strings.Repeat(" ", contIndentWidth)
 				for _, msgLine := range msgLines[1:] {
 					lines = append(lines, contIndent+msgLine)
 				}
