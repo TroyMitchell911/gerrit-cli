@@ -361,32 +361,15 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Chain mode: only navigation, no search
 			if dv.popupMode == "chain" {
-				switch msg.Type {
-				case tea.KeyEscape:
+				switch {
+				case msg.Type == tea.KeyEscape, key.Matches(msg, dv.keys.Back):
 					dv.popupActive = false
 					dv.popupMode = ""
 					dv.popupQuery = ""
 					dv.popupResults = nil
 					dv.popupSelected = 0
 					dv.chainChanges = nil
-				case tea.KeyRunes:
-					if key.Matches(msg, dv.keys.Back) {
-						dv.popupActive = false
-						dv.popupMode = ""
-						dv.popupQuery = ""
-						dv.popupResults = nil
-						dv.popupSelected = 0
-						dv.chainChanges = nil
-					} else if key.Matches(msg, dv.keys.Up) {
-						if dv.popupSelected > 0 {
-							dv.popupSelected--
-						}
-					} else if key.Matches(msg, dv.keys.Down) {
-						if dv.popupSelected < len(dv.chainChanges)-1 {
-							dv.popupSelected++
-						}
-					}
-				case tea.KeyEnter:
+				case key.Matches(msg, dv.keys.Select):
 					if len(dv.chainChanges) > 0 && dv.popupSelected < len(dv.chainChanges) {
 						ch := dv.chainChanges[dv.popupSelected]
 						changeID := ""
@@ -413,15 +396,13 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 						}
 					}
-				default:
-					if key.Matches(msg, dv.keys.Up) {
-						if dv.popupSelected > 0 {
-							dv.popupSelected--
-						}
-					} else if key.Matches(msg, dv.keys.Down) {
-						if dv.popupSelected < len(dv.chainChanges)-1 {
-							dv.popupSelected++
-						}
+				case key.Matches(msg, dv.keys.Up):
+					if dv.popupSelected > 0 {
+						dv.popupSelected--
+					}
+				case key.Matches(msg, dv.keys.Down):
+					if dv.popupSelected < len(dv.chainChanges)-1 {
+						dv.popupSelected++
 					}
 				}
 				return dv, nil
