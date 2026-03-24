@@ -702,6 +702,15 @@ func (dv *DetailView) renderSummaryPane() string {
 	// Status
 	lines = append(lines, fmt.Sprintf("Status: %v", dv.change["status"]))
 
+	// Project
+	project := ""
+	if p, ok := dv.change["project"].(string); ok {
+		project = p
+	}
+	if project != "" {
+		lines = append(lines, fmt.Sprintf("Project: %s", project))
+	}
+
 	// Labels (Code-Review, Verified, etc.) - show individual votes
 	if labels, ok := dv.change["labels"].(map[string]interface{}); ok && len(labels) > 0 {
 		labelNames := make([]string, 0, len(labels))
