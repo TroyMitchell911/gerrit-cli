@@ -1032,26 +1032,39 @@ func (dv *DetailView) renderReviewPane() string {
 				prefix = "▸ "
 			}
 
-			// Build thread indentation using > symbols
+			// Build thread indentation using > symbols (Linux mail list style)
+			// Last reply has no >, second-to-last has one >, etc.
+			indentCount := c.maxDepth - c.depth
 			indent := ""
-			for d := 0; d < c.depth; d++ {
+			for d := 0; d < indentCount; d++ {
 				indent += ">"
 			}
-			if c.depth > 0 {
+			if indentCount > 0 {
 				indent += " "
 			}
 
-			// Show author with thread indentation
-			header := fmt.Sprintf("%s%s[%s] %s:", prefix, indent, c.author, c.line)
-			if c.depth > 0 {
-				// For replies, show simpler format: >author
-				header = fmt.Sprintf("%s%s%s:", prefix, indent, c.author)
-			}
-
-			lines = append(lines, header)
+			// Show author with thread indentation, followed by message on same line
 			msgLines := strings.Split(strings.ReplaceAll(c.message, "\r\n", "\n"), "\n")
-			for _, msgLine := range msgLines {
-				lines = append(lines, fmt.Sprintf("%s  %s%s", prefix, indent, msgLine))
+			if c.depth == 0 {
+				// Root comment: [author] line: message
+				if len(msgLines) > 0 {
+					lines = append(lines, fmt.Sprintf("%s%s[%s] line %d: %s", prefix, indent, c.author, c.line, msgLines[0]))
+				} else {
+					lines = append(lines, fmt.Sprintf("%s%s[%s] line %d:", prefix, indent, c.author, c.line))
+				}
+				for _, msgLine := range msgLines[1:] {
+					lines = append(lines, prefix+msgLine)
+				}
+			} else {
+				// Reply: >author: message (indent shows depth)
+				if len(msgLines) > 0 {
+					lines = append(lines, fmt.Sprintf("%s%s%s: %s", prefix, indent, c.author, msgLines[0]))
+				} else {
+					lines = append(lines, fmt.Sprintf("%s%s%s:", prefix, indent, c.author))
+				}
+				for _, msgLine := range msgLines[1:] {
+					lines = append(lines, prefix+msgLine)
+				}
 			}
 
 			commentRanges = append(commentRanges, commentRange{rawStart, len(lines)})
@@ -1564,6 +1577,7 @@ type commentEntry struct {
 	inReplyTo string
 	line      int
 	depth     int // nesting depth for thread display
+	maxDepth  int // maximum depth in this thread
 }
 
 // commentThread represents a thread of comments
@@ -1658,23 +1672,49 @@ func (dv *DetailView) buildThreadedComments() []commentEntry {
 			return roots[i].comment.line < roots[j].comment.line
 		})
 
-		// Flatten threads with depth
-		var flatten func(thread *commentThread, depth int)
-		flatten = func(thread *commentThread, depth int) {
+		// Calculate max depth for each thread
+		var calcMaxDepth func(thread *commentThread) int
+		calcMaxDepth = func(thread *commentThread) int {
+			maxD := thread.comment.depth
+			for _, reply := range thread.replies {
+				d := calcMaxDepth(reply)
+				if d > maxD {
+					maxD = d
+				}
+			}
+			return maxD
+		}
+
+		// Flatten threads with depth and maxDepth
+		var flatten func(thread *commentThread, depth int, maxDepth int)
+		flatten = func(thread *commentThread, depth int, maxDepth int) {
 			entry := thread.comment
 			entry.depth = depth
+			entry.maxDepth = maxDepth
 			result = append(result, entry)
 			// Sort replies by line number
 			sort.Slice(thread.replies, func(i, j int) bool {
 				return thread.replies[i].comment.line < thread.replies[j].comment.line
 			})
 			for _, reply := range thread.replies {
-				flatten(reply, depth+1)
+				flatten(reply, depth+1, maxDepth)
 			}
 		}
 
 		for _, root := range roots {
-			flatten(root, 0)
+			// First pass: set depth for all nodes
+			var setDepth func(thread *commentThread, depth int)
+			setDepth = func(thread *commentThread, depth int) {
+				thread.comment.depth = depth
+				for _, reply := range thread.replies {
+					setDepth(reply, depth+1)
+				}
+			}
+			setDepth(root, 0)
+			// Calculate max depth for this thread
+			maxDepth := calcMaxDepth(root)
+			// Second pass: flatten with maxDepth
+			flatten(root, 0, maxDepth)
 		}
 	}
 
