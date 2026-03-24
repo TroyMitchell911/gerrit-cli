@@ -310,7 +310,15 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					dv.popupMode = ""
 					dv.popupConfirmAction = ""
 					dv.popupConfirmData = nil
+					return dv, nil
 				case tea.KeyRunes:
+					if key.Matches(msg, dv.keys.Back) {
+						dv.popupActive = false
+						dv.popupMode = ""
+						dv.popupConfirmAction = ""
+						dv.popupConfirmData = nil
+						return dv, nil
+					}
 					if len(msg.Runes) > 0 {
 						switch msg.Runes[0] {
 						case 'y', 'Y':
@@ -361,6 +369,23 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					dv.popupResults = nil
 					dv.popupSelected = 0
 					dv.chainChanges = nil
+				case tea.KeyRunes:
+					if key.Matches(msg, dv.keys.Back) {
+						dv.popupActive = false
+						dv.popupMode = ""
+						dv.popupQuery = ""
+						dv.popupResults = nil
+						dv.popupSelected = 0
+						dv.chainChanges = nil
+					} else if key.Matches(msg, dv.keys.Up) {
+						if dv.popupSelected > 0 {
+							dv.popupSelected--
+						}
+					} else if key.Matches(msg, dv.keys.Down) {
+						if dv.popupSelected < len(dv.chainChanges)-1 {
+							dv.popupSelected++
+						}
+					}
 				case tea.KeyEnter:
 					if len(dv.chainChanges) > 0 && dv.popupSelected < len(dv.chainChanges) {
 						ch := dv.chainChanges[dv.popupSelected]
@@ -389,23 +414,13 @@ func (dv *DetailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				default:
-					if msg.Type == tea.KeyUp {
+					if key.Matches(msg, dv.keys.Up) {
 						if dv.popupSelected > 0 {
 							dv.popupSelected--
 						}
-					} else if msg.Type == tea.KeyDown {
+					} else if key.Matches(msg, dv.keys.Down) {
 						if dv.popupSelected < len(dv.chainChanges)-1 {
 							dv.popupSelected++
-						}
-					} else if msg.Type == tea.KeyRunes {
-						if key.Matches(msg, dv.keys.FocusUp) {
-							if dv.popupSelected > 0 {
-								dv.popupSelected--
-							}
-						} else if key.Matches(msg, dv.keys.FocusDown) {
-							if dv.popupSelected < len(dv.chainChanges)-1 {
-								dv.popupSelected++
-							}
 						}
 					}
 				}
@@ -1501,7 +1516,7 @@ func (dv *DetailView) submitReplyComment(replyFile, commentID, filename string) 
 		}
 		message := strings.TrimSpace(strings.Join(msgLines, "\n"))
 		if message == "" {
-			return actionResultMsg{success: false, message: "Reply cancelled (empty message)"}
+			return nil
 		}
 		if err := dv.client.ReplyComment(dv.changeID, "current", filename, commentID, message); err != nil {
 			return actionResultMsg{success: false, message: fmt.Sprintf("Failed to post reply: %v", err)}
@@ -2084,7 +2099,8 @@ func (dv *DetailView) renderConfirmPopup() string {
 	}
 	lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("160")).Render(actionText))
 	lines = append(lines, "")
-	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("y: confirm | n/esc: cancel"))
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(
+		fmt.Sprintf("y: confirm | n/%s/esc: cancel", keyStr(dv.keys.Back, "q"))))
 
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -2153,8 +2169,8 @@ func (dv *DetailView) renderChainPopup() string {
 
 	lines = append(lines, "")
 	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(
-		fmt.Sprintf("↑↓/%s/%s: select | enter: view | esc: cancel",
-			keyStr(dv.keys.FocusDown, "alt+j"), keyStr(dv.keys.FocusUp, "alt+k"))))
+		fmt.Sprintf("%s/%s: select | %s: view | %s/esc: cancel",
+			keyStr(dv.keys.Up, "k"), keyStr(dv.keys.Down, "j"), keyStr(dv.keys.Select, "enter"), keyStr(dv.keys.Back, "q"))))
 
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
