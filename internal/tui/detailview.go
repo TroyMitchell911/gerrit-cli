@@ -1015,6 +1015,7 @@ func (dv *DetailView) renderReviewPane() string {
 		lines = append(lines, "No comments yet")
 	} else {
 		currentFile := ""
+		currentThreadRoot := ""
 		for i, c := range dv.commentList {
 			rawStart := len(lines)
 
@@ -1025,12 +1026,20 @@ func (dv *DetailView) renderReviewPane() string {
 				}
 				lines = append(lines, lipgloss.NewStyle().Bold(true).Render(c.filename))
 				currentFile = c.filename
+				currentThreadRoot = "" // reset thread tracking for new file
 			}
 
-			prefix := "  "
-			if dv.activePane == PaneReview && i == dv.selectedComment {
-				prefix = "▸ "
+			// Add thread separator between different threads in same file
+			if c.depth == 0 && currentThreadRoot != "" {
+				// Thread separator line
+				sepLine := strings.Repeat("-", dv.width/2-4)
+				lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(sepLine))
 			}
+			if c.depth == 0 {
+				currentThreadRoot = c.id
+			}
+
+			isSelected := dv.activePane == PaneReview && i == dv.selectedComment
 
 			// Build thread indentation using > symbols (Linux mail list style)
 			// Last reply has no >, second-to-last has one >, etc.
@@ -1043,27 +1052,40 @@ func (dv *DetailView) renderReviewPane() string {
 				indent += " "
 			}
 
+			// Calculate prefix for alignment (arrow or spaces)
+			linePrefix := "  "
+			if isSelected {
+				linePrefix = "▸ "
+			}
+
 			// Show author with thread indentation, followed by message on same line
 			msgLines := strings.Split(strings.ReplaceAll(c.message, "\r\n", "\n"), "\n")
+			// First line has arrow if selected, continuation lines use spaces for alignment
+			contPrefix := "  " // continuation always uses spaces, no arrow
 			if c.depth == 0 {
-				// Root comment: [author] line: message
+				// Root comment: [author]: message
 				if len(msgLines) > 0 {
-					lines = append(lines, fmt.Sprintf("%s%s[%s] line %d: %s", prefix, indent, c.author, c.line, msgLines[0]))
+					lines = append(lines, fmt.Sprintf("%s%s[%s]: %s", linePrefix, indent, c.author, msgLines[0]))
 				} else {
-					lines = append(lines, fmt.Sprintf("%s%s[%s] line %d:", prefix, indent, c.author, c.line))
+					lines = append(lines, fmt.Sprintf("%s%s[%s]:", linePrefix, indent, c.author))
 				}
+				// Continuation lines: align with the message start (after author)
+				contIndent := contPrefix + strings.Repeat(" ", len(indent)) + strings.Repeat(" ", len(c.author)+4) // +4 for "[]: "
 				for _, msgLine := range msgLines[1:] {
-					lines = append(lines, prefix+msgLine)
+					lines = append(lines, contIndent+msgLine)
 				}
 			} else {
-				// Reply: >author: message (indent shows depth)
+				// Reply: >author: message
 				if len(msgLines) > 0 {
-					lines = append(lines, fmt.Sprintf("%s%s%s: %s", prefix, indent, c.author, msgLines[0]))
+					lines = append(lines, fmt.Sprintf("%s%s%s: %s", linePrefix, indent, c.author, msgLines[0]))
 				} else {
-					lines = append(lines, fmt.Sprintf("%s%s%s:", prefix, indent, c.author))
+					lines = append(lines, fmt.Sprintf("%s%s%s:", linePrefix, indent, c.author))
 				}
+				// Continuation lines: align with the message start
+				// indentLen: len(indent) + len(author) + 2 (for ": ")
+				contIndent := contPrefix + strings.Repeat(" ", len(indent)) + strings.Repeat(" ", len(c.author)+2)
 				for _, msgLine := range msgLines[1:] {
-					lines = append(lines, prefix+msgLine)
+					lines = append(lines, contIndent+msgLine)
 				}
 			}
 
